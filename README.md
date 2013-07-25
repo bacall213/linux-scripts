@@ -20,8 +20,6 @@ sudo visudo
 Find the line that begins with "Defaults secure_path=".
 Add "~/bin" or the absolute path to your bin directory (e.g. /home/$USER/bin) to the end of the line.
 
-Note: Each path is separated by a colon (:)
-
 
 ## Notes
 - Paths in /etc/sudoers are separated by colons (:)
