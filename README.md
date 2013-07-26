@@ -63,13 +63,21 @@ mkdir ~/bin
 git clone https://github.com/bacall213/linux-scripts.git ~/bin
 ```
 
-### Step 2 - Add 'bin' directory to /etc/sudoers
+### Step 2 - Open /etc/sudoers for editing
 ```
 sudo visudo
 ```
-Find the line that begins with "Defaults secure_path=".
-Add "~/bin" or the absolute path to your bin directory (e.g. /home/$USER/bin) to the end of the line.
 
+### Step 3 - Add your 'bin' path to 'secure_path'
+- Find the line that begins with "Defaults secure_path="
+- Add "~/bin" (minus the quotes) or the absolute path to your bin directory (e.g. /home/$USER/bin) to the end of the line.
+
+
+### Step 4 - Save and exit
+Assuming you use vim as your default editor...
+```
+:wq<enter>
+```
 
 ## Notes
 - Paths in /etc/sudoers are separated by colons (:)
