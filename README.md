@@ -16,6 +16,45 @@ These scripts are written as a hobby for various purposes, including:
 I recommend creating a 'bin' directory under your home directory and executing them from there, but this is only a preference, not a requirement. They can be placed anywhere you can execute them from. I've tried to be conscious of alternate placements and used various "location-finding" functions, where necessary, to ensure the scripts function as intended.
 
 
+## Scripts
+### brainbox-updater.sh
+- Status: Mostly complete
+- Purpose: Ubuntu updater
+- Features: 
+ - Sanity checks
+ - Full, in-script documentation
+ - Extensive help system
+ - Adjustable status updates
+ - Highly configurable logging
+- Limitations:
+ - Not tested on any other system other than Ubuntu
+
+
+### googlizer.sh
+- Status: Mostly complete
+- Purpose: Colorizes input into the Google colors
+- Features:
+ - Outputs copy-paste compatible text
+ - Outputs script friendly code
+- Limitations:
+ - No input validation
+
+### crobuntu-updater.sh
+- Status: Incomplete
+- Purpose: Updater for Ubuntu on Chromeboxes/books (Crobuntu)
+
+
+### brainbox-customizer.sh
+- Status: Incomplete
+- Purpose: Framework for fully customizing a new install
+- Features:
+ - Menu based
+ - Scriptable
+- Limitations:
+ - Designed for my own personal use, many features will be irrelevant
+ - Mostly incomplete
+
+
 ## Installation
 ### Step 1 - Grab the scripts
 ```
