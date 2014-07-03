@@ -1,6 +1,6 @@
 Linux Scripts Repository
 ========================
-Brian Call
+Author: Brian Call
 
 # Introduction
 These scripts are written as a hobby for various purposes, including:
