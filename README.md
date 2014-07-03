@@ -1,6 +1,5 @@
 Linux Scripts Repository
 ========================
-# Author
 Brian Call
 
 # Introduction
