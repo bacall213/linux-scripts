@@ -14,6 +14,23 @@ I recommend creating a 'bin' directory under your home directory and executing t
 
 
 # Scripts
+## brainmux.sh
+- Status: Mostly complete
+- Purpose: Friendly wrapper for tmux
+- Limitations:
+ - Only tested with Ubuntu 12.04 and tmux 1.6
+
+
+## brainbox-fail-whale-city-v1.sh
+- Status: Complete
+- Purpose: Fail whale in a city ASCII art
+
+
+## brainbox-fail-whale-forest-v1.sh
+- Status: Complete
+- Purpose: Fail whale in a forest ASCII art
+
+
 ## brainbox-updater.sh
 - Status: Mostly complete
 - Purpose: Ubuntu updater
