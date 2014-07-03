@@ -2,7 +2,7 @@ Linux Scripts Repository
 ========================
 Author: Brian Call
 Status: Unstable
-License: ?
+License: MIT
 
 
 ## Purpose
