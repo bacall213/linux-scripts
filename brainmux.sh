@@ -1,8 +1,8 @@
 #!/bin/bash
 
-######################################################################
+##############################################################################
 # BRAINBOX TMUX SESSION MANAGER
-######################################################################
+##############################################################################
 #
 # AUTHOR: Brian Call
 # SOURCE: https://github.com/bacall213
@@ -35,7 +35,6 @@
 # KNOWN ISSUES (KI):
 #   1) tmux.conf misconfigurations will cause script to fail
 #   2) tmux.conf settings will override script settings
-#   3) 
 #
 # CONVENTIONS USED:
 #   - Versioning standard: 
@@ -43,8 +42,11 @@
 #     - e.g. v1.1.2014-b20 = Major version 1, January 2014, build 20
 #
 # REVISION HISTORY:
-#   - v1.6.2014-b1
+#   - v1.7.2014-b1
 #     - Initial public release
+#   - v1.7.2014-b2
+#     - check_symlink function created
+#     - Warning message for bad verbose flags added
 #
 # TODO:
 #   1) Custom session
@@ -52,45 +54,41 @@
 #      defaults function.
 #   3) Ensure all inputs are sanitized
 #
-######################################################################
+##############################################################################
 
-######################################################################
-######################################################################
+##############################################################################
+##############################################################################
 # VARIABLES
-######################################################################
-CLI_CMD="";
-ARG_POS="";
-tmuxStatus="999";
-CLI_ARGS=("$@");
-DEBUG1=false;                         # -v    : Minimal debug info
-DEBUG2=false;                         # -vv   : Some debug info
-DEBUG3=false;                         # -vvv  : Most debug info
-DEBUG4=false;                         # -vvvv : All debug info
+##############################################################################
+# Formatting Constants
+declare -r BOLD=$(tput bold);                     # Bold
+declare -r UL=$(tput smul);                       # Underline
+declare -r NO_UL=$(tput rmul);                    # No underline
+declare -r NORM=$(tput sgr0);                     # Normal (not bolded)
+declare -r BOLD_BG_RED=${BOLD}$(tput setab 1);    # Bold w/red background
+declare -r BOLD_RED=${BOLD}$(tput setaf 1);       # Bold red
+declare -r BOLD_BG_YELLOW=${BOLD}$(tput setab 3); # Bold w/yellow background
+declare -r BOLD_YELLOW=${BOLD}$(tput setaf 3);    # Bold yellow
+declare -r BOLD_GREEN=${BOLD}$(tput setaf 2);     # Bold green
+declare -r BOLD_BG_GREEN=${BOLD}$(tput setab 2);  # Bold w/green background
 
-# Formatting variables
-bold=$(tput bold);                    # Bold
-ul=$(tput smul);                      # Underline
-noul=$(tput rmul);                    # No underline
-norm=$(tput sgr0);                    # Normal (not bolded)
-boldbgred=${bold}$(tput setab 1);     # Bold w/red background
-boldred=${bold}$(tput setaf 1);       # Bold red
-boldbgyellow=${bold}$(tput setab 3);  # Bold w/yellow background
-boldyellow=${bold}$(tput setaf 3);    # Bold yellow
-boldgreen=${bold}$(tput setaf 2);     # Bold green
-boldbggreen=${bold}$(tput setab 2);   # Bold w/green background
+# Script name
+declare -r SCRIPT_NAME=$(basename "$0");
+declare -r SCRIPT_BASE=$(basename "$0" .sh);
 
-# Session defaults
-# CAUTION: create() depends on these values being in a particular order
-SESSION_DEFAULTS=('tmux new-session -d'
-                  'tmux split-window -h -p 50'
-                  'tmux new-window'
-                  'tmux new-window'
-                  'tmux new-window'
-                  'tmux select-window -t:0'
-                  'tmux select-pane -L -t:0');
 
-# Failure quotes array
-FAILURE_QUOTES=("My great concern is not whether you have failed, but whether you are content with your failure. --Abraham Lincoln"
+# Session Defaults Array
+# NOTE: create() depends on these values being in a particular order
+declare -r SESSION_DEFAULTS=('tmux new-session -d'
+                            'tmux split-window -h -p 50'
+                            'tmux new-window'
+                            'tmux new-window'
+                            'tmux new-window'
+                            'tmux select-window -t:0'
+                            'tmux select-pane -L -t:0');
+
+# Failure Quotes Array
+declare -r FAILURE_QUOTES=("My great concern is not whether you have failed, but whether you are content with your failure. --Abraham Lincoln"
                 "Many of life's failures are people who did not realize how close they were to success when they gave up. --Thomas A. Edison"
                 "Failure is not fatal, but failure to change might be. --John Wooden"
                 "If you learn from defeat, you haven't really lost. --Zig Ziglar"
@@ -105,64 +103,73 @@ FAILURE_QUOTES=("My great concern is not whether you have failed, but whether yo
                 "There is no failure except in no longer trying. --Chris Bradford"
                 "The only real mistake is the one from which we learn nothing. --Henry Ford");
 
+# Initialization for various global variables
+cli_cmd="";                   # Tracks current argument
+arg_pos="";                   # Tracks argument position in array
+tmux_status="999";            # Impossible value
+cli_args=("$@");              # Store all args
+debug1=false;                 # -v    : Minimal debug info
+debug2=false;                 # -vv   : Some debug info
+debug3=false;                 # -vvv  : Most debug info
+debug4=false;                 # -vvvv : All debug info
 
 
-#####################################################################
-#####################################################################
+##############################################################################
+##############################################################################
 # FUNCTION
-#####################################################################
+##############################################################################
 # NAME: quickhelp
 # PURPOSE: Display short script help information
 # ARGUMENTS:
 # - None
 # OUTPUT:
 # - Script help information
-#####################################################################
+##############################################################################
 function quickhelp()
 {
   # [debug] Function start
-  if [[ $DEBUG4 == true ]];
+  if [[ $debug4 == true ]];
   then
-    echo "[DEBUG][QUICKHELP][${boldgreen}INFO${norm}] Entering 'quickhelp' function";
+    echo "[DEBUG][QUICKHELP][${BOLD_GREEN}INFO${NORM}] Entering 'quickhelp' function";
   fi
 
-  echo -en "\n${bold}USAGE :: $0${norm} [-v|vv|vvv|vvvv] ${bold}command${norm} ${ul}options${noul}\r\n
-  ${ul}Create and Destroy Sessions${noul}\r
-    ${bold}create${norm} [${ul}session_1${noul} ${ul}session_2${noul} ${ul}session_3${noul} ...]\r
-    \t(aliases: ${bold}new${norm}, ${bold}start${norm})\r
+  echo -en "\n${BOLD}USAGE :: $0${NORM} [-v|vv|vvv|vvvv] ${BOLD}command${NORM} ${UL}options${NO_UL}\r\n
+  ${UL}Create and Destroy Sessions${NO_UL}\r
+    ${BOLD}create${NORM} [${UL}session_1${NO_UL} ${UL}session_2${NO_UL} ${UL}session_3${NO_UL} ...]\r
+    \t(aliases: ${BOLD}new${NORM}, ${BOLD}start${NORM})\r
 
-    ${bold}destroy${norm} [all] ${ul}existing_session${noul}\r
-    \t(aliases: ${bold}stop${norm}, ${bold}kill${norm})\r
+    ${BOLD}destroy${NORM} [all] ${UL}existing_session${NO_UL}\r
+    \t(aliases: ${BOLD}stop${NORM}, ${BOLD}kill${NORM})\r
 
-  ${ul}Connect and Disconnect Sessions${noul}\r
-    ${bold}connect${norm} ${ul}existing_session${noul}\r
-    \t(alias: ${bold}attach${norm})\r
+  ${UL}Connect and Disconnect Sessions${NO_UL}\r
+    ${BOLD}connect${NORM} ${UL}existing_session${NO_UL}\r
+    \t(alias: ${BOLD}attach${NORM})\r
 
-    ${bold}disconnect${norm} ${ul}existing_session${noul}\r
-    \t(alias: ${bold}detach${norm})\r
+    ${BOLD}disconnect${NORM} ${UL}existing_session${NO_UL}\r
+    \t(alias: ${BOLD}detach${NORM})\r
 
-  ${ul}Create a Custom Session${noul}\r
-    ${bold}custom${norm} ${ul}session_properties${noul}\r
+  ${UL}Create a Custom Session${NO_UL}\r
+    ${BOLD}custom${NORM} ${UL}session_properties${NO_UL}\r
 
-  ${ul}Session Information${noul}\r
-    ${bold}info${norm}\r
-    ${bold}defaults${norm}\r
-    ${bold}sessions${norm}\r
+  ${UL}Session Information${NO_UL}\r
+    ${BOLD}info${NORM}\r
+    ${BOLD}defaults${NORM}\r
+    ${BOLD}sessions${NORM}\r
 
-  ${ul}General Script Options${noul}\r
-    ${bold}help${norm} (this menu)\r
-    ${bold}helpfull${norm}\r
+  ${UL}General Script Options${NO_UL}\r
+    ${BOLD}help${NORM} (this menu)\r
+    ${BOLD}helpfull${NORM}\r
     
-    Debug/Verbose Mode (${bold}Must be first argument${norm})\r
+    Debug/Verbose Mode (${BOLD}Must be first argument${NORM})\r
       -v    : Minimal verbosity/debug information\r
       -vv   : More verbose/some internal debug information\r
       -vvv  : Most debug information\r
       -vvvv : Full verbosity/All debug information\n\n";
 
   # [debug] Function end
-  if [[ $DEBUG4 == true ]];
+  if [[ $debug4 == true ]];
   then
-    echo "[DEBUG][QUICKHELP][${boldgreen}INFO${norm}] Leaving 'quickhelp' function";
+    echo "[DEBUG][QUICKHELP][${BOLD_GREEN}INFO${NORM}] Leaving 'quickhelp' function";
   fi
 
   # Exit gracefully
@@ -172,92 +179,96 @@ function quickhelp()
 
 
 
-#####################################################################
-#####################################################################
+##############################################################################
+##############################################################################
 # FUNCTION
-#####################################################################
+##############################################################################
 # NAME: fullhelp
 # PURPOSE: Display full script help information
 # ARGUMENTS:
 # - None
 # OUTPUT:
 # - Script help information
-#####################################################################
+##############################################################################
 function fullhelp()
 {
   # [debug] Function start
-  if [[ $DEBUG4 == true ]];
+  if [[ $debug4 == true ]];
   then
-    echo "[DEBUG][FULLHELP][${boldgreen}INFO${norm}] Entering 'fullhelp' function";
+    echo "[DEBUG][FULLHELP][${BOLD_GREEN}INFO${NORM}] Entering 'fullhelp' function";
   fi
 
-  echo -en "\n${bold}USAGE :: $0${norm} [-v|vv|vvv|vvvv] ${bold}command${norm} ${ul}options${noul}\r\n
-  ${ul}Create and Destroy Sessions${noul}\r
-    ${bold}create${norm} [${ul}session_1${noul} ${ul}session_2${noul} ${ul}session_3${noul} ...]\r
-    \t(aliases: ${bold}new${norm}, ${bold}start${norm})\r
+  echo -en "\n${BOLD}USAGE :: $0${NORM} [-v|vv|vvv|vvvv] ${BOLD}command${NORM} ${UL}options${NO_UL}\r\n
+  ${UL}Create and Destroy Sessions${NO_UL}\r
+    ${BOLD}create${NORM} [${UL}session_1${NO_UL} ${UL}session_2${NO_UL} ${UL}session_3${NO_UL} ...]\r
+    \t(aliases: ${BOLD}new${NORM}, ${BOLD}start${NORM})\r
 
     \tCreate one or multiple tmux sessions. If no session name is specified, \r
     \ttmux will create a new session named using its own mechanisms. If a \r
     \tspecified session already exists, this script will skip over that \r
     \tsession.\r
 
-    ${bold}destroy${norm} [all] ${ul}existing_session${noul}\r
-    \t(aliases: ${bold}stop${norm}, ${bold}kill${norm})\r
+    ${BOLD}destroy${NORM} [all] ${UL}existing_session${NO_UL}\r
+    \t(aliases: ${BOLD}stop${NORM}, ${BOLD}kill${NORM})\r
 
     \tDestroy single, or all, existing tmux sessions. If 'all' is \r
     \tspecified, this script will try to destroy all existing sessions. \r
 
-  ${ul}Connect and Disconnect Sessions${noul}\r
-    ${bold}connect${norm} ${ul}existing_session${noul}\r
-    \t(alias: ${bold}attach${norm})\r
+  ${UL}Connect and Disconnect Sessions${NO_UL}\r
+    ${BOLD}connect${NORM} ${UL}existing_session${NO_UL}\r
+    \t(alias: ${BOLD}attach${NORM})\r
 
     \tConnect to an existing tmux session.\r
 
-    ${bold}disconnect${norm} ${ul}existing_session${noul}\r
-    \t(alias: ${bold}detach${norm})\r
+    ${BOLD}disconnect${NORM} ${UL}existing_session${NO_UL}\r
+    \t(alias: ${BOLD}detach${NORM})\r
 
     \tDisconnect from an existing tmux session.\r
  
-  ${ul}Create a Custom Session${noul}\r
-    ${bold}custom${norm} ${ul}session_properties${noul}\r
+  ${UL}Create a Custom Session${NO_UL}\r
+    ${BOLD}custom${NORM} ${UL}session_properties${NO_UL}\r
 
-    \tCreate a custom tmux session using provided ${ul}session_properties${noul}.\r
+    \tCreate a custom tmux session using provided ${UL}session_properties${NO_UL}.\r
     \tAll tmux.conf defaults and script defaults are ignored.\r
 
-    \tFormat: ${boldyellow}<TODO>${norm}\r
+    \tFormat: ${BOLD_YELLOW}<TODO>${NORM}\n\n";
 
-  ${ul}Session Information${noul}\r
-    ${bold}info${norm}\r
+  # Page break
+  read -p "(${BOLD}Press <Enter> for next page${NORM})";
+
+  echo -en "
+  ${UL}Session Information${NO_UL}\r
+    ${BOLD}info${NORM}\r
     \tShow tmux session information, if tmux server is active.\r
 
-    ${bold}defaults${norm}\r
+    ${BOLD}defaults${NORM}\r
     \tShow the session defaults that are hard-coded into this script.\r
 
-    ${bold}sessions${norm}\r
+    ${BOLD}sessions${NORM}\r
     \tShow running tmux sessions.\r
 
-  ${ul}General Script Information${noul}\r
-    ${bold}help${norm}\r
-    ${bold}helpfull${norm} (this menu)\r
+  ${UL}General Script Information${NO_UL}\r
+    ${BOLD}help${NORM}\r
+    ${BOLD}helpfull${NORM} (this menu)\r
     
-    Debug/Verbose Mode (${bold}Must be first argument${norm})\r
+    Debug/Verbose Mode (${BOLD}Must be first argument${NORM})\r
       -v    : Minimal verbosity/debug information\r
       -vv   : More verbose/some internal debug information\r
       -vvv  : Most debug information\r
       -vvvv : Full verbosity/All debug information\r
   
     Output conventions\r
-      [${boldgreen}INFO${norm}]  General debugging information.
-      [${boldyellow}WARN${norm}]  Most non-fatal errors, like conflicts \r
+      [${BOLD_GREEN}INFO${NORM}]  General debugging information.
+      [${BOLD_YELLOW}WARN${NORM}]  Most non-fatal errors, like conflicts \r
               with existing sessions. Script may or may not exit.\r
-      [${boldred}ERROR${norm}] Major errors. Script will exit (with \r 
+      [${BOLD_RED}ERROR${NORM}] Major errors. Script will exit (with \r 
               limited exceptions). Syntax errors fall into this category.\r
-      [${boldbgred}FATAL${norm}] Fatal errors. Script will exit (no exceptions).\n\n";
+      [${BOLD_BG_RED}FATAL${NORM}] Fatal errors. Script will exit (no exceptions).\n\n";
 
   # [debug] Function end
-  if [[ $DEBUG4 == true ]];
+  if [[ $debug4 == true ]];
   then
-    echo "[DEBUG][FULLHELP][${boldgreen}INFO${norm}] Leaving 'fullhelp' function";
+    echo "[DEBUG][FULLHELP][${BOLD_GREEN}INFO${NORM}] Leaving 'fullhelp' function";
   fi
 
   # Exit gracefully
@@ -267,24 +278,63 @@ function fullhelp()
 
 
 
-#####################################################################
-#####################################################################
+##############################################################################
+##############################################################################
 # FUNCTION
-#####################################################################
+##############################################################################
 # NAME: check_symlink
-# PURPOSE: Make sure a symlink for the script without ".sh"
-#           still exists.
+# PURPOSE: Checks for a symlink named the same as the script, but 
+#           without ".sh"
 # ARGUMENTS: 
 # - None
 # OUTPUT:
 # - No console
 # - Create 'brainmux' symlink in current directory if it doesn't
 #   exist and it's possible.
-#####################################################################
+##############################################################################
 function check_symlink()
 {
-  echo "<TODO> Checking for symlink";
+  # [debug] Function start
+  if [[ $debug4 == true ]];
+  then
+    echo "[DEBUG][CHECK_SYMLINK][${BOLD_GREEN}INFO${NORM}] Entering 'check_symlink' function";
+  fi
 
+  # If NOT symlink...
+  if [[ ! $(test -L "$SCRIPT_NAME" && readlink "$SCRIPT_NAME") ]];
+  then
+    if [[ $debug4 == true ]];
+    then
+      echo "[DEBUG][CHECK_SYMLINK][${BOLD_GREEN}INFO${NORM}] $SCRIPT_NAME is NOT a symlink.";
+    fi
+
+    # Check for a symlink
+    if [[ ! $(test -L "$SCRIPT_BASE" && readlink "$SCRIPT_BASE") ]];
+    then
+      # No symlink found in current directory
+      echo "[${BOLD_GREEN}INFO${NORM}] No symlink found in current directory.";
+      echo "[${BOLD_GREEN}INFO${NORM}] Run ${BOLD}ln -s $SCRIPT_NAME $SCRIPT_BASE${NORM} if you would like one.";
+    else
+      # Symlink found: Silently continue, unless debugging
+      if [[ $debug4 == true ]];
+      then
+        echo "[DEBUG][CHECK_SYMLINK][${BOLD_GREEN}INFO${NORM}] Found a symlink during second check: $SCRIPT_BASE";
+      fi
+    fi
+  else
+    # Is a symlink
+    # Silently continue, unless debugging
+    if [[ $debug4 == true ]];
+    then
+      echo "[DEBUG][CHECK_SYMLINK][${BOLD_GREEN}INFO${NORM}] First check found a symlink, actual script name: $(basename "$(test -L "$0" && readlink "$0" || echo "$0")")";
+    fi
+  fi
+
+  # [debug] Function end
+  if [[ $debug4 == true ]];
+  then 
+    echo "[DEBUG][CHECK_SYMLINK][${BOLD_GREEN}INFO${NORM}] Leaving 'check_symlink' function";
+  fi
 
   # No exit
 }
@@ -292,23 +342,23 @@ function check_symlink()
 
 
 
-#####################################################################
-#####################################################################
+##############################################################################
+##############################################################################
 # FUNCTION
-#####################################################################
+##############################################################################
 # NAME: defaults
 # PURPOSE: Read tmux defaults and display them
 # ARGUMENTS:
 # - None
 # OUTPUT:
 # - tmux defaults as defined by SESSION_DEFAULTS array
-#####################################################################
+##############################################################################
 function defaults()
 {
   # [debug] Function start
-  if [[ $DEBUG4 == true ]];
+  if [[ $debug4 == true ]];
   then
-    echo "[DEBUG][DEFAULTS][${boldgreen}INFO${norm}] Entering 'defaults' function";
+    echo "[DEBUG][DEFAULTS][${BOLD_GREEN}INFO${NORM}] Entering 'defaults' function";
   fi
 
   # Window layout
@@ -332,7 +382,7 @@ function defaults()
   ################### ###################\n";
 
   # Options
-  echo -e "${bold}Session creation commands:${norm}\n";
+  echo -e "${BOLD}Session creation commands:${NORM}\n";
   
   # Output default session creation parameters
   # Use 'sdefault' to prevent potential collisions with 'default'
@@ -345,20 +395,20 @@ function defaults()
   # [console] Tmux.conf Contents
   if [[ -e ~/.tmux.conf ]];
   then
-    echo -e "\n${bold}Contents of ${ul}~/.tmux.conf${norm}\n";
+    echo -e "\n${BOLD}Contents of ${UL}~/.tmux.conf${NORM}\n";
     cat ~/.tmux.conf;
   fi
   
   if [[ -e /etc/tmux.conf ]];
   then
-    echo -e "\n${bold}Contents of ${ul}/etc/tmux.conf${norm}\n";
+    echo -e "\n${BOLD}Contents of ${UL}/etc/tmux.conf${NORM}\n";
     cat /etc/tmux.conf;
   fi
 
   # [debug] Function end
-  if [[ $DEBUG4 == true ]];
+  if [[ $debug4 == true ]];
   then
-    echo "[DEBUG][DEFAULTS][${boldgreen}INFO${norm}] Leaving 'defaults' function";
+    echo "[DEBUG][DEFAULTS][${BOLD_GREEN}INFO${NORM}] Leaving 'defaults' function";
   fi
 
   # Exit gracefully
@@ -368,86 +418,87 @@ function defaults()
 
 
 
-#####################################################################
-#####################################################################
+##############################################################################
+##############################################################################
 # FUNCTION 
-##################################################################### 
+############################################################################## 
 # NAME: check_session
 # PURPOSE: Check if specified session exists
 # ARGUMENTS:
 # - $1 : Session to check for
 # OUTPUT:
-# - Sets status of $tmuxStatus
-#####################################################################
+# - Sets status of $tmux_status
+##############################################################################
 function check_session()
 {
   # [debug] Function start
-  if [[ $DEBUG4 == true ]];
+  if [[ $debug4 == true ]];
   then
-    echo "[DEBUG][CHECK_SESSION][${boldgreen}INFO${norm}] Entering 'check_session' function";
+    echo "[DEBUG][CHECK_SESSION][${BOLD_GREEN}INFO${NORM}] Entering 'check_session' function";
   fi
 
   # Variables
-  tmuxStatus="999";         # Reset at start of function as a safeguard
+  tmux_status="999";         # Reset at start of function as a safeguard
   local tmuxSession="$1";   # Contains a passed in session name
 
   # Check for existing session
   tmux has-session -t "$tmuxSession" &>/dev/null;
 
   # Grab exit from check
-  tmuxStatus=$?;
+  tmux_status=$?;
 
   # [debug] Session check
-  if [[ $DEBUG4 == true ]];
+  if [[ $debug4 == true ]];
   then
-    echo "[DEBUG][CHECK_SESSION][${boldgreen}INFO${norm}] Session tested = $tmuxSession";
-    echo "[DEBUG][CHECK_SESSION][${boldgreen}INFO${norm}] tmuxStatus = $tmuxStatus";
+    echo "[DEBUG][CHECK_SESSION][${BOLD_GREEN}INFO${NORM}] Session tested = $tmuxSession";
+    echo "[DEBUG][CHECK_SESSION][${BOLD_GREEN}INFO${NORM}] tmux_status = $tmux_status";
   fi
 
   # [debug] Function end
-  if [[ $DEBUG4 == true ]];
+  if [[ $debug4 == true ]];
   then
-    echo "[DEBUG][CHECK_SESSION][${boldgreen}INFO${norm}] Leaving 'check_session' function";
+    echo "[DEBUG][CHECK_SESSION][${BOLD_GREEN}INFO${NORM}] Leaving 'check_session' function";
   fi
 }
 
 
 
 
-#####################################################################
-#####################################################################
+##############################################################################
+##############################################################################
 # FUNCTION
-#####################################################################
+##############################################################################
 # NAME: create 
 # PURPOSE: Create/start new tmux session
 # ARGUMENTS:
-# - Command line args : ${CLI_ARGS[@]}
+# - Command line args : ${cli_args[@]}
 # OUTPUT:
 # - None (sessions created silently)
-#####################################################################
+##############################################################################
 function create()
 {
   # create() function also aliased as 'start' and 'new'
 
   # [debug] Function start
-  if [[ $DEBUG4 == true ]];
+  if [[ $debug4 == true ]];
   then
-    echo "[DEBUG][CREATE][${boldgreen}INFO${norm}] Entering 'create' function";
+    echo "[DEBUG][CREATE][${BOLD_GREEN}INFO${NORM}] Entering 'create' function";
   fi
 
   # Variables
-  local sessionArgs=("${CLI_ARGS[@]}");
+  local sessionArgs;
+  sessionArgs=("${cli_args[@]}");
 
-  if [[ "${sessionArgs[$ARG_POS]}" == "" ]];
+  if [[ "${sessionArgs[$arg_pos]}" == "" ]];
   then
     # [debug] No session specified, creating generic session
-    if [[ $DEBUG3 == true ]];
+    if [[ $debug3 == true ]];
     then
-      echo "[DEBUG][CREATE][${boldyellow}WARN${norm}] No session names specified";
+      echo "[DEBUG][CREATE][${BOLD_YELLOW}WARN${NORM}] No session names specified";
     fi
 
     # [console] No session specified, creating generic session
-    echo "[${boldyellow}WARNING${norm}] No session name specified," \
+    echo "[${BOLD_YELLOW}WARNING${NORM}] No session name specified," \
     "tmux will choose one for you. Run this script with the" \
     "'sessions' command to identify running tmux sessions.";
 
@@ -459,27 +510,27 @@ function create()
   else
     # Check sessions at command line, create if they don't exist, otherwise error
     # Start from array element 1 = elements after "create" command
-    for i in "${sessionArgs[@]:$ARG_POS}"
+    for i in "${sessionArgs[@]:$arg_pos}"
     do
       # [debug] Identify parsed session name
-      if [[ $DEBUG4 == true ]];
+      if [[ $debug4 == true ]];
       then
-        echo "[DEBUG][CREATE][${boldgreen}INFO${norm}] Parsed session name: $i"; 
+        echo "[DEBUG][CREATE][${BOLD_GREEN}INFO${NORM}] Parsed session name: $i"; 
       fi
 
       # Check to see if a session by the same name exists
-      # 'check_session' updates $tmuxStatus variable
-      # Session does not exist: tmuxStatus = 1
-      # Session exists: tmuxStatus = 0
+      # 'check_session' updates $tmux_status variable
+      # Session does not exist: tmux_status = 1
+      # Session exists: tmux_status = 0
       check_session "$i";
     
       # If check_session didn't find an existing session, create it
-      if [[ "$tmuxStatus" == "1" ]];
+      if [[ "$tmux_status" == "1" ]];
       then
         # [debug] Creating session
-        if [[ $DEBUG3 == true ]];
+        if [[ $debug3 == true ]];
         then
-          echo "[DEBUG][CREATE][${boldgreen}INFO${norm}] Creating session $i";
+          echo "[DEBUG][CREATE][${BOLD_GREEN}INFO${NORM}] Creating session $i";
         fi
 
         # Relies on array matching these base values
@@ -492,7 +543,7 @@ function create()
         #tmux select-pane -L -t $i:0;
 
         # Go through SESSION_DEFAULTS array line by line and execute custom commands
-        if [[ $DEBUG4 == true ]];
+        if [[ $debug4 == true ]];
         then
           echo "[DEBUG][CREATE] Create session executing: ${SESSION_DEFAULTS[0]} -s $i";
           ${SESSION_DEFAULTS[0]} -s $i;
@@ -525,21 +576,21 @@ function create()
         fi
       else
         # [debug] Session exists, skipped
-        if [[ $DEBUG3 == true ]];
+        if [[ $debug3 == true ]];
         then
-          echo "[DEBUG][CREATE][${boldyellow}WARN${norm}] Session '${bold}$i${norm}' exists. Skipped.";
+          echo "[DEBUG][CREATE][${BOLD_YELLOW}WARN${NORM}] Session '${BOLD}$i${NORM}' exists. Skipped.";
         fi
 
         # [console] Session exists, skipped
-        echo "[${boldyellow}WARNING${norm}] Session '${bold}$i${norm}' exists. Skipped.";
+        echo "[${BOLD_YELLOW}WARNING${NORM}] Session '${BOLD}$i${NORM}' exists. Skipped.";
       fi
     done
   fi
 
   # [debug] Function end
-  if [[ $DEBUG4 == true ]];
+  if [[ $debug4 == true ]];
   then
-    echo "[DEBUG][CREATE][${boldgreen}INFO${norm}] Leaving 'create' function";
+    echo "[DEBUG][CREATE][${BOLD_GREEN}INFO${NORM}] Leaving 'create' function";
   fi
 
   # Exit gracefully
@@ -549,45 +600,46 @@ function create()
 
 
 
-#####################################################################
-#####################################################################
+##############################################################################
+##############################################################################
 # FUNCTION
-#####################################################################
+##############################################################################
 # NAME: destroy 
 # PURPOSE: Kill/destroy existing tmux sessions
 # ARGUMENTS:
 # - session name to kill
 # OUTPUT:
 # - None
-#####################################################################
+##############################################################################
 function destroy()
 {
   # destroy() function also aliased as 'kill' and 'stop'
 
   # [debug] Function start
-  if [[ $DEBUG4 == true ]];
+  if [[ $debug4 == true ]];
   then
-    echo "[DEBUG][DESTROY][${boldgreen}INFO${norm}] Entering 'destroy' function";
+    echo "[DEBUG][DESTROY][${BOLD_GREEN}INFO${NORM}] Entering 'destroy' function";
   fi
 
   # Variables
-  local sessionArgs=("${CLI_ARGS[@]}");
+  local sessionArgs;
+  sessionArgs=("${cli_args[@]}");
 
   # Kill all sessions if 'all' is the first argument after command
-  if [[ "${sessionArgs[$ARG_POS]}" == "" ]];
+  if [[ "${sessionArgs[$arg_pos]}" == "" ]];
   then
     # [debug] No session specified
-    if [[ $DEBUG3 == true ]];
+    if [[ $debug3 == true ]];
     then
-      echo "[DEBUG][DESTROY][${boldred}ERROR${norm}] No session names specified";
+      echo "[DEBUG][DESTROY][${BOLD_RED}ERROR${NORM}] No session names specified";
     fi
 
     # [console] No session specified
-    echo "[${boldred}ERROR${norm}] No session names specified";
-  elif [[ "${sessionArgs[$ARG_POS]}" == "all" ]];
+    echo "[${BOLD_RED}ERROR${NORM}] No session names specified";
+  elif [[ "${sessionArgs[$arg_pos]}" == "all" ]];
   then
     # Kill the server
-    echo -n "${boldbgred}CAUTION${norm} You're about to kill the tmux server and all sessions. Continue [y/N]? ";
+    echo -n "${BOLD_BG_RED}CAUTION${NORM} You're about to kill the tmux server and all sessions. Continue [y/N]? ";
     read -t 10 KILLCHOICE;
     
     case $KILLCHOICE in
@@ -596,60 +648,60 @@ function destroy()
         tmux kill-server &>/dev/null;
         
         # [console] All tmux sessions killed
-        echo "tmux server and all sessions have been ${boldred}killed${norm}.";
+        echo "tmux server and all sessions have been ${BOLD_RED}killed${NORM}.";
       ;;
       n|N|no|No|NO)
-        echo "Kill server ${boldgreen}aborted${norm}.";
+        echo "Kill server ${BOLD_GREEN}aborted${NORM}.";
       ;;
       *)
-        echo "Invalid choice, server was ${boldred}not${norm} killed.";
+        echo "Invalid choice, server was ${BOLD_RED}not${NORM} killed.";
       ;;
     esac
   else
     # Check sessions at command line, delete them if they exist, otherwise throw error
     # Start from array element 1 = elements after "destroy" command
-    for i in "${sessionArgs[@]:$ARG_POS}"
-    do  
+    for i in "${sessionArgs[@]:$arg_pos}"
+    do
       # [debug] Identify parsed session name
-      if [[ $DEBUG4 == true ]];
+      if [[ $debug4 == true ]];
       then
-        echo "[DEBUG][DESTROY][${boldgreen}INFO${norm}] Parsed session name: $i"; 
+        echo "[DEBUG][DESTROY][${BOLD_GREEN}INFO${NORM}] Parsed session name: $i"; 
       fi
 
       # Check to see if a session by the same name exists
-      # 'check_session' updates $tmuxStatus variable
-      # Session does not exist: tmuxStatus = 1
-      # Session exists: tmuxStatus = 0
+      # 'check_session' updates $tmux_status variable
+      # Session does not exist: tmux_status = 1
+      # Session exists: tmux_status = 0
       check_session "$i";
-    
+
       # If check_session found an existing session, kill it
-      if [[ "$tmuxStatus" == "0" ]]; 
+      if [[ "$tmux_status" == "0" ]]; 
       then
         # [debug] Destroying session
-        if [[ $DEBUG3 == true ]];
+        if [[ $debug3 == true ]];
         then
-          echo "[DEBUG][DESTROY][${boldgreen}INFO${norm}] Destroying session '${bold}$i${norm}'";
+          echo "[DEBUG][DESTROY][${BOLD_GREEN}INFO${NORM}] Destroying session '${BOLD}$i${NORM}'";
         fi
 
         # Destroy session
         tmux kill-session -t $i;
       else
         # [debug] Session does not exist, skipped
-        if [[ $DEBUG3 == true ]];
+        if [[ $debug3 == true ]];
         then
-          echo "[DEBUG][DESTROY][${boldyellow}WARN${norm}] Session '${bold}$i${norm}' does not exist. Skipped.";
+          echo "[DEBUG][DESTROY][${BOLD_YELLOW}WARN${NORM}] Session '${BOLD}$i${NORM}' does not exist. Skipped.";
         fi
 
         # [console] Session does not exist, skipped
-        echo "[${boldyellow}WARNING${norm}] Session '${bold}$i${norm}' does not exist. Skipped.";
-      fi  
+        echo "[${BOLD_YELLOW}WARNING${NORM}] Session '${BOLD}$i${NORM}' does not exist. Skipped.";
+      fi
     done
   fi
 
   # [debug] Function end
-  if [[ $DEBUG4 == true ]];
+  if [[ $debug4 == true ]];
   then
-    echo "[DEBUG][DESTROY][${boldgreen}INFO${norm}] Leaving 'destroy' function";
+    echo "[DEBUG][DESTROY][${BOLD_GREEN}INFO${NORM}] Leaving 'destroy' function";
   fi
 
   # Exit gracefully
@@ -659,87 +711,88 @@ function destroy()
 
 
 
-#####################################################################
-#####################################################################
+##############################################################################
+##############################################################################
 # FUNCTION
-#####################################################################
+##############################################################################
 # NAME: attach
 # PURPOSE: Attach to existing tmux session
 # ARGUMENTS:
 # - Session name
 # OUTPUT:
 # - None
-#####################################################################
+##############################################################################
 function attach()
 {
   # [debug] Function start
-  if [[ $DEBUG4 == true ]];
+  if [[ $debug4 == true ]];
   then
-    echo "[DEBUG][ATTACH][${boldgreen}INFO${norm}] Entering 'attach' function";
+    echo "[DEBUG][ATTACH][${BOLD_GREEN}INFO${NORM}] Entering 'attach' function";
   fi
 
   # Variables
-  local sessionArgs=("${CLI_ARGS[@]}");
+  local sessionArgs;
+  sessionArgs=("${cli_args[@]}");
 
-  if [[ "${sessionArgs[$ARG_POS]}" == "" ]]; 
+  if [[ "${sessionArgs[$arg_pos]}" == "" ]]; 
   then
     # [debug] No session specified, attach to session if only one session exists
-    if [[ $DEBUG3 == true ]];
+    if [[ $debug3 == true ]];
     then
-      echo "[DEBUG][ATTACH][${boldyellow}WARN${norm}] No session names specified";
+      echo "[DEBUG][ATTACH][${BOLD_YELLOW}WARN${NORM}] No session names specified";
     fi
 
     if [[ `tmux list-sessions | wc -l 2>/dev/null` -eq 1 ]];
     then
       # [console] No session specified, attach to only session
-      echo "[${boldyellow}WARNING${norm}] No session specified, attaching to the only running session."
+      echo "[${BOLD_YELLOW}WARNING${NORM}] No session specified, attaching to the only running session."
 
       # More processor intensive, but defines a specific session to attach to 
       # help prevent MITM attacks.
       tmux attach -t `tmux list-sessions | cut -d':' -f1`;
     else
       # [console] No session specified and none to attach to
-      echo "[${boldred}ERROR${norm}] No session specified and no usable session found to attach to."
+      echo "[${BOLD_RED}ERROR${NORM}] No session specified and no usable session found to attach to."
     fi
   else
     # [debug] Identify parsed session name
-    if [[ $DEBUG4 == true ]];
+    if [[ $debug4 == true ]];
     then
-      echo "[DEBUG][ATTACH][${boldgreen}INFO${norm}] Parsed session name: ${sessionArgs[$ARG_POS]}";
+      echo "[DEBUG][ATTACH][${BOLD_GREEN}INFO${NORM}] Parsed session name: ${sessionArgs[$arg_pos]}";
     fi
 
     # Check to see if session exists
-    check_session "${sessionArgs[$ARG_POS]}";
+    check_session "${sessionArgs[$arg_pos]}";
 
-    if [[ "$tmuxStatus" == "0" ]];
+    if [[ "$tmux_status" == "0" ]];
     then
       # [debug] Found session, connecting...
-      if [[ $DEBUG3 == true ]];
+      if [[ $debug3 == true ]];
       then
-        echo "[DEBUG][ATTACH][${boldgreen}INFO${norm}] Found session, ${bold}${sessionArgs[$ARG_POS]}${norm}, attaching...";
+        echo "[DEBUG][ATTACH][${BOLD_GREEN}INFO${NORM}] Found session, ${BOLD}${sessionArgs[$arg_pos]}${NORM}, attaching...";
       fi
 
       # [console] Found session, connecting... 
-      echo "Found session, ${bold}${sessionArgs[$ARG_POS]}${norm}, attaching...";
+      echo "Found session, ${BOLD}${sessionArgs[$arg_pos]}${NORM}, attaching...";
 
       # Attach session
-      tmux attach-session -t ${sessionArgs[$ARG_POS]};
+      tmux attach-session -t ${sessionArgs[$arg_pos]};
     else
       # [debug] Specified session does not exist
-      if [[ $DEBUG3 == true ]];
+      if [[ $debug3 == true ]];
       then
-        echo "[DEBUG][ATTACH][${boldred}ERROR${norm}] Specified session does not exist";
+        echo "[DEBUG][ATTACH][${BOLD_RED}ERROR${NORM}] Specified session does not exist";
       fi
 
       # [console] Specified session does not exist
-      echo "[${boldred}ERROR${norm}] Specified session, ${bold}${sessionArgs[$ARG_POS]}${norm}, does not exist";
+      echo "[${BOLD_RED}ERROR${NORM}] Specified session, ${BOLD}${sessionArgs[$arg_pos]}${NORM}, does not exist";
     fi
   fi
 
   # [debug] Function end
-  if [[ $DEBUG4 == true ]];
+  if [[ $debug4 == true ]];
   then
-    echo "[DEBUG][ATTACH][${boldgreen}INFO${norm}] Leaving 'attach' function";
+    echo "[DEBUG][ATTACH][${BOLD_GREEN}INFO${NORM}] Leaving 'attach' function";
   fi
 
   # Exit gracefully
@@ -749,82 +802,83 @@ function attach()
 
 
 
-#####################################################################
-#####################################################################
+##############################################################################
+##############################################################################
 # FUNCTION
-#####################################################################
+##############################################################################
 # NAME: detach
 # PURPOSE: Detach existing tmux session
 # ARGUMENTS:
 # - Session name
 # OUTPUT:
 # - None
-#####################################################################
+##############################################################################
 function detach()
 {
   # [debug] Function start
-  if [[ $DEBUG4 == true ]];
+  if [[ $debug4 == true ]];
   then
-    echo "[DEBUG][DETACH][${boldgreen}INFO${norm}] Entering 'detach' function";
+    echo "[DEBUG][DETACH][${BOLD_GREEN}INFO${NORM}] Entering 'detach' function";
   fi
 
   # Variables
-  local sessionArgs=("${CLI_ARGS[@]}");
+  local sessionArgs;
+  sessionArgs=("${cli_args[@]}");
 
-  if [[ "${sessionArgs[$ARG_POS]}" == "" ]]; 
+  if [[ "${sessionArgs[$arg_pos]}" == "" ]]; 
   then
     # [debug] No session specified, error and exit
-    if [[ $DEBUG3 == true ]];
+    if [[ $debug3 == true ]];
     then
-      echo "[DEBUG][DETACH][${boldred}ERROR${norm}] No session specified, cannot continue.";
+      echo "[DEBUG][DETACH][${BOLD_RED}ERROR${NORM}] No session specified, cannot continue.";
     fi
 
     # [console]
-    echo -e "\n[${boldred}ERROR${norm}] No session specified, cannot continue.";
+    echo -e "\n[${BOLD_RED}ERROR${NORM}] No session specified, cannot continue.";
 
     quickhelp;
   else
     # [debug] Identify parsed session name
-    if [[ $DEBUG4 == true ]];
+    if [[ $debug4 == true ]];
     then
-      echo "[DEBUG][DETACH][${boldgreen}INFO${norm}] Parsed session name: ${sessionArgs[$ARG_POS]}";
+      echo "[DEBUG][DETACH][${BOLD_GREEN}INFO${NORM}] Parsed session name: ${sessionArgs[$arg_pos]}";
     fi
 
     # Check to see if session exists
-    check_session "${sessionArgs[$ARG_POS]}";
+    check_session "${sessionArgs[$arg_pos]}";
 
-    if [[ "$tmuxStatus" == "0" ]];
+    if [[ "$tmux_status" == "0" ]];
     then
       # [debug] Found session, trying to detach it...
-      if [[ $DEBUG3 == true ]];
+      if [[ $debug3 == true ]];
       then
-        echo "[DEBUG][DETACH][${boldgreen}INFO${norm}] Found session, ${bold}${sessionArgs[$ARG_POS]}${norm}, trying to detach it...";
+        echo "[DEBUG][DETACH][${BOLD_GREEN}INFO${NORM}] Found session, ${BOLD}${sessionArgs[$arg_pos]}${NORM}, trying to detach it...";
       fi
 
       # [console] Found session, trying to detach it... 
-      echo "Found session, ${bold}${sessionArgs[$ARG_POS]}${norm}, trying to detach it...";
+      echo "Found session, ${BOLD}${sessionArgs[$arg_pos]}${NORM}, trying to detach it...";
 
       # Attach session
-      tmux detach-client -s ${sessionArgs[$ARG_POS]};
+      tmux detach-client -s ${sessionArgs[$arg_pos]};
     else
       # [debug] Specified session does not exist
-      if [[ $DEBUG3 == true ]];
+      if [[ $debug3 == true ]];
       then
-        echo "[DEBUG][DETACH][${boldred}ERROR${norm}] Specified session does not exist.";
+        echo "[DEBUG][DETACH][${BOLD_RED}ERROR${NORM}] Specified session does not exist.";
       fi
 
       # [console] Specified session does not exist
-      echo "[${boldred}ERROR${norm}] Specified session," \
-      "${bold}${sessionArgs[$ARG_POS]}${norm}, does not exist. Run" \
-      "this script with the ${bold}sessions${norm} command to show" \
+      echo "[${BOLD_RED}ERROR${NORM}] Specified session," \
+      "${BOLD}${sessionArgs[$arg_pos]}${NORM}, does not exist. Run" \
+      "this script with the ${BOLD}sessions${NORM} command to show" \
       "existing tmux sessions.";
     fi
   fi
 
   # [debug] Function end
-  if [[ $DEBUG4 == true ]];
+  if [[ $debug4 == true ]];
   then
-    echo "[DEBUG][DETACH][${boldgreen}INFO${norm}] Leaving 'detach' function";
+    echo "[DEBUG][DETACH][${BOLD_GREEN}INFO${NORM}] Leaving 'detach' function";
   fi
 
   # Exit gracefully
@@ -834,43 +888,43 @@ function detach()
 
 
 
-#####################################################################
-#####################################################################
+##############################################################################
+##############################################################################
 # FUNCTION
-#####################################################################
+##############################################################################
 # NAME: info
 # PURPOSE: Display info on current tmux sessions
 # ARGUMENTS:
 # - None
 # OUTPUT:
 # - Tmux session information
-#####################################################################
+##############################################################################
 function info()
 {
   # [debug] Function start
-  if [[ $DEBUG4 == true ]];
+  if [[ $debug4 == true ]];
   then
-    echo "[DEBUG][INFO][${boldgreen}INFO${norm}] Entering 'info' function";
+    echo "[DEBUG][INFO][${BOLD_GREEN}INFO${NORM}] Entering 'info' function";
   fi
  
   # Get information on running tmux sessions
   tmux info &>/dev/null
       
   # Grab exit code from 'tmux info' output
-  tmuxStatus=$?;
+  tmux_status=$?;
 
-  if [[ $tmuxStatus -eq 1 ]];
+  if [[ $tmux_status -eq 1 ]];
   then
-    echo "[${boldbgred}FATAL${norm}] tmux is not running";
+    echo "[${BOLD_BG_RED}FATAL${NORM}] tmux is not running";
   else
     # Execute native tmux info command
     tmux info;
   fi
 
   # [debug] Function end
-  if [[ $DEBUG4 == true ]];
+  if [[ $debug4 == true ]];
   then
-    echo "[DEBUG][INFO][${boldgreen}INFO${norm}] Leaving 'info' function";
+    echo "[DEBUG][INFO][${BOLD_GREEN}INFO${NORM}] Leaving 'info' function";
   fi
 
   # Exit gracefully
@@ -880,31 +934,32 @@ function info()
 
 
 
-#####################################################################
-#####################################################################
+##############################################################################
+##############################################################################
 # FUNCTION 
-#####################################################################
+##############################################################################
 # NAME: custom
 # PURPOSE: Create a custom tmux session
 # ARGUMENTS:
 # - Session properties
 # OUTPUT:
 # - None
-#####################################################################
+##############################################################################
 function custom()
 {
   # [debug] Function start
-  if [[ $DEBUG4 == true ]];
+  if [[ $debug4 == true ]];
   then
-    echo "[DEBUG][CUSTOM][${boldgreen}INFO${norm}] Entering 'custom' function";
+    echo "[DEBUG][CUSTOM][${BOLD_GREEN}INFO${NORM}] Entering 'custom' function";
   fi
 
-  echo "${boldyellow}<TODO>${norm}";
+  echo "${BOLD_YELLOW}<TODO>${NORM}";
+
 
   # [debug] Function end
-  if [[ $DEBUG4 == true ]];
+  if [[ $debug4 == true ]];
   then
-    echo "[DEBUG][CUSTOM][${boldgreen}INFO${norm}] Leaving 'custom' function";
+    echo "[DEBUG][CUSTOM][${BOLD_GREEN}INFO${NORM}] Leaving 'custom' function";
   fi
 
   # Exit gracefully
@@ -915,32 +970,32 @@ function custom()
 
 
 
-#####################################################################
-#####################################################################
+##############################################################################
+##############################################################################
 # FUNCTION
-#####################################################################
+##############################################################################
 # NAME: sessions
 # PURPOSE: List active tmux sessions
 # ARGUMENTS:
 # - None
 # OUTPUT:
 # - tmux session list, if tmux is running
-#####################################################################
+##############################################################################
 function sessions()
 {
   # [debug] Function start
-  if [[ $DEBUG4 == true ]];
+  if [[ $debug4 == true ]];
   then
-    echo "[DEBUG][SESSIONS][${boldgreen}INFO${norm}] Entering 'sessions' function";
+    echo "[DEBUG][SESSIONS][${BOLD_GREEN}INFO${NORM}] Entering 'sessions' function";
   fi
 
   # Call native tmux command for listing current sessions
   tmux list-sessions;
 
   # [debug] Function end
-  if [[ $DEBUG4 == true ]];
+  if [[ $debug4 == true ]];
   then
-    echo "[DEBUG][SESSIONS][${boldgreen}INFO${norm}] Leaving 'sessions' function";
+    echo "[DEBUG][SESSIONS][${BOLD_GREEN}INFO${NORM}] Leaving 'sessions' function";
   fi
 
   # Exit gracefully
@@ -950,49 +1005,54 @@ function sessions()
 
 
 
-#####################################################################
-#####################################################################
+##############################################################################
+##############################################################################
 # MAIN
-#####################################################################
+##############################################################################
 if [[ $# -gt 0 ]];
 then
-  CLI_CMD="$1";
-  ARG_POS="1";
+  cli_cmd="$1";
+  arg_pos="1";
 
-  # Check for script symlink
-  # <TODO>
-
-  if [[ "$CLI_CMD" =~ "-v" ]];
+  if [[ "$cli_cmd" =~ "-v" ]];
   then
-    case $CLI_CMD in
+    case $cli_cmd in
       -v)
-        DEBUG1=true;
+        debug1=true;
         # No console confirmation for debug level 1
       ;;
       -vv)
-        DEBUG1=true;
-        DEBUG2=true;
+        debug1=true;
+        debug2=true;
         # No console confirmation for debug level 2
       ;;
       -vvv)
-        DEBUG1=true;
-        DEBUG2=true;
-        DEBUG3=true;
-        echo -e "\n[DEBUG][MAIN][${boldyellow}WARN${norm}] Debug level 3 enabled\n";
+        debug1=true;
+        debug2=true;
+        debug3=true;
+        echo -e "\n[DEBUG][MAIN][${BOLD_YELLOW}WARN${NORM}] Debug level 3 enabled\n";
       ;;
       -vvvv)
-        DEBUG1=true;
-        DEBUG2=true;
-        DEBUG3=true;
-        DEBUG4=true;
-        echo -e "\n[DEBUG][MAIN][${boldyellow}WARN${norm}] Debug level 4 enabled\n";
+        debug1=true;
+        debug2=true;
+        debug3=true;
+        debug4=true;
+        echo -e "\n[DEBUG][MAIN][${BOLD_YELLOW}WARN${NORM}] Debug level 4 enabled\n";
+      ;;
+      *)
+        # Bad verbose flag
+        echo "[${BOLD_YELLOW}WARN${NORM}] Bad verbose flag, '${BOLD}$cli_cmd${NORM}.' Continuing without verbosity."
+      ;;
     esac
     
-    CLI_CMD="$2";
-    ARG_POS="2";
+    cli_cmd="$2";
+    arg_pos="2";
   fi
 
-  case $CLI_CMD in
+  # Check for symlink
+  check_symlink;
+
+  case $cli_cmd in
     autocompletelist)
       # Output list of script options for the autocomplete function
       echo "attach connect create custom defaults destroy detach disconnect info help kill new sessions start stop ?";
@@ -1061,7 +1121,7 @@ then
       # Just-in-case... (but this shouldn't be reached)
       exit 1;
     ;;
-    helpfull|Helpfull|HELPFULL|??)
+    helpfull|Helpfull|HELPFULL)
       # Call full help function
       fullhelp;
 
@@ -1070,7 +1130,7 @@ then
     ;;
     *)
     # [console] Bad flag, show error and call quick help function
-    echo "[${boldred}ERROR${norm}] Bad flag, '${bold}$CLI_CMD${norm}'";
+    echo "[${BOLD_RED}ERROR${NORM}] Bad flag, '${BOLD}$cli_cmd${NORM}'";
     
     quickhelp;
 
@@ -1084,10 +1144,10 @@ else
   # Random number generation localized so it's not called unless needed
   # Generate random number within range 0 - ARRAY_LEN
   RAND=$RANDOM;
-  ((RAND %= ${#FAILURE_QUOTES[@]}));
+  let RAND%=${#FAILURE_QUOTES[@]};
 
   # Print a funny quote from FAILURE_QUOTES array for instances when no command is entered
-  echo -e "\n[${boldred}FAILURE${norm}] ${FAILURE_QUOTES[$RAND]}";
+  echo -e "\n[${BOLD_RED}FAILURE${NORM}] ${FAILURE_QUOTES[$RAND]}";
 
   # Show the documentation
   quickhelp;
