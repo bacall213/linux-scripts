@@ -47,6 +47,8 @@
 #   - v1.7.2014-b2
 #     - check_symlink function created
 #     - Warning message for bad verbose flags added
+#   - v1.8.2014-b1
+#     - Fixed symlink checker function (flawed logic)
 #
 # TODO:
 #   1) Custom session
@@ -73,9 +75,22 @@ declare -r BOLD_GREEN=${BOLD}$(tput setaf 2);     # Bold green
 declare -r BOLD_BG_GREEN=${BOLD}$(tput setab 2);  # Bold w/green background
 
 # Script name
-declare -r SCRIPT_NAME=$(basename "$0");
-declare -r SCRIPT_BASE=$(basename "$0" .sh);
+# /full/cannonical/name.sh
+declare -r SCRIPT_NAME_FULL_LONG=$(readlink -e "$0");
 
+# name.sh
+declare -r SCRIPT_NAME_FULL_SHORT=$(basename "$SCRIPT_NAME_FULL_LONG");
+
+# /full/cannonical/name
+declare -r SCRIPT_NAME_BASE_LONG=${SCRIPT_NAME_FULL_LONG%%.sh};
+
+# name
+declare -r SCRIPT_NAME_BASE_SHORT=$(basename "$SCRIPT_NAME_BASE_LONG");
+
+#echo "Script name full long: $SCRIPT_NAME_FULL_LONG";
+#echo "Script name full short: $SCRIPT_NAME_FULL_SHORT";
+#echo "Script name base long: $SCRIPT_NAME_BASE_LONG";
+#echo "Script name base short: $SCRIPT_NAME_BASE_SHORT";
 
 # Session Defaults Array
 # NOTE: create() depends on these values being in a particular order
@@ -301,24 +316,25 @@ function check_symlink()
   fi
 
   # If NOT symlink...
-  if [[ ! $(test -L "$SCRIPT_NAME" && readlink "$SCRIPT_NAME") ]];
+  if [[ ! $(test -L "$0" && readlink "$0") ]];
   then
     if [[ $debug4 == true ]];
     then
-      echo "[DEBUG][CHECK_SYMLINK][${BOLD_GREEN}INFO${NORM}] $SCRIPT_NAME is NOT a symlink.";
+      echo "[DEBUG][CHECK_SYMLINK][${BOLD_GREEN}INFO${NORM}] $SCRIPT_NAME_FULL_LONG is NOT a symlink.";
     fi
 
     # Check for a symlink
-    if [[ ! $(test -L "$SCRIPT_BASE" && readlink "$SCRIPT_BASE") ]];
+    if [[ ! $(test -L "$SCRIPT_NAME_BASE_LONG" && readlink "$SCRIPT_NAME_BASE_LONG") ]];
     then
       # No symlink found in current directory
-      echo "[${BOLD_GREEN}INFO${NORM}] No symlink found in current directory.";
-      echo "[${BOLD_GREEN}INFO${NORM}] Run ${BOLD}ln -s $SCRIPT_NAME $SCRIPT_BASE${NORM} if you would like one.";
+      echo "[${BOLD_GREEN}INFO${NORM}] No symlink found in execution directory.";
+      # Use full path so the command is universal no matter what directory you're in
+      echo "[${BOLD_GREEN}INFO${NORM}] Run ${BOLD}ln -s $SCRIPT_NAME_FULL_LONG $SCRIPT_NAME_BASE_LONG${NORM} if you would like one.";
     else
       # Symlink found: Silently continue, unless debugging
       if [[ $debug4 == true ]];
       then
-        echo "[DEBUG][CHECK_SYMLINK][${BOLD_GREEN}INFO${NORM}] Found a symlink during second check: $SCRIPT_BASE";
+        echo "[DEBUG][CHECK_SYMLINK][${BOLD_GREEN}INFO${NORM}] Found a symlink during second check: $SCRIPT_NAME_BASE_LONG";
       fi
     fi
   else
@@ -326,7 +342,8 @@ function check_symlink()
     # Silently continue, unless debugging
     if [[ $debug4 == true ]];
     then
-      echo "[DEBUG][CHECK_SYMLINK][${BOLD_GREEN}INFO${NORM}] First check found a symlink, actual script name: $(basename "$(test -L "$0" && readlink "$0" || echo "$0")")";
+#      echo "[DEBUG][CHECK_SYMLINK][${BOLD_GREEN}INFO${NORM}] First check found a symlink, actual script name: $(basename "$(test -L "$0" && readlink "$0" || echo "$0")")";
+      echo "[DEBUG][CHECK_SYMLINK][${BOLD_GREEN}INFO${NORM}] I am a symlink; actual script name: $SCRIPT_NAME_FULL_LONG";
     fi
   fi
 
@@ -396,7 +413,13 @@ function defaults()
   if [[ -e ~/.tmux.conf ]];
   then
     echo -e "\n${BOLD}Contents of ${UL}~/.tmux.conf${NORM}\n";
-    cat ~/.tmux.conf;
+    #cat ~/.tmux.conf;
+
+    # Intelligent parsing
+    while read line; do
+      echo $line;
+
+    done < ~/.tmux.conf
   fi
   
   if [[ -e /etc/tmux.conf ]];
