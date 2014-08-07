@@ -15,10 +15,8 @@ I recommend creating a 'bin' directory under your home directory and executing t
 
 # Scripts
 ## brainmux.sh
-- Status: Mostly complete
+- Status: Complete
 - Purpose: Friendly wrapper for tmux
-- Limitations:
- - Only tested with Ubuntu 12.04 and tmux 1.6
 
 
 ## brainbox-fail-whale-city-v1.sh
@@ -40,8 +38,6 @@ I recommend creating a 'bin' directory under your home directory and executing t
  - Extensive help system
  - Adjustable status updates
  - Highly configurable logging
-- Limitations:
- - Not tested on any other system other than Ubuntu
 
 
 ## googlizer.sh
@@ -54,7 +50,7 @@ I recommend creating a 'bin' directory under your home directory and executing t
  - No input validation
 
 ## crobuntu-updater.sh
-- Status: Incomplete
+- Status: Incomplete (project scrapped in favor of brainbox-updater)
 - Purpose: Updater for Ubuntu on Chromeboxes/books (Crobuntu)
 
 
