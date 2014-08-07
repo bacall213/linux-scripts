@@ -49,6 +49,9 @@
 #     - Warning message for bad verbose flags added
 #   - v1.8.2014-b1
 #     - Fixed symlink checker function (flawed logic)
+#   - v1.8.2014-b2
+#     - create() function not as dependant on defaults array order
+#     - Updated a few messages
 #
 # TODO:
 #   1) Custom session
@@ -87,13 +90,9 @@ declare -r SCRIPT_NAME_BASE_LONG=${SCRIPT_NAME_FULL_LONG%%.sh};
 # name
 declare -r SCRIPT_NAME_BASE_SHORT=$(basename "$SCRIPT_NAME_BASE_LONG");
 
-#echo "Script name full long: $SCRIPT_NAME_FULL_LONG";
-#echo "Script name full short: $SCRIPT_NAME_FULL_SHORT";
-#echo "Script name base long: $SCRIPT_NAME_BASE_LONG";
-#echo "Script name base short: $SCRIPT_NAME_BASE_SHORT";
-
 # Session Defaults Array
-# NOTE: create() depends on these values being in a particular order
+# NOTE: create() expects these commands to be in a particular order.
+#       Changing the order will have unexpected consequences.
 declare -r SESSION_DEFAULTS=('tmux new-session -d'
                             'tmux split-window -h -p 50'
                             'tmux new-window'
@@ -342,7 +341,6 @@ function check_symlink()
     # Silently continue, unless debugging
     if [[ $debug4 == true ]];
     then
-#      echo "[DEBUG][CHECK_SYMLINK][${BOLD_GREEN}INFO${NORM}] First check found a symlink, actual script name: $(basename "$(test -L "$0" && readlink "$0" || echo "$0")")";
       echo "[DEBUG][CHECK_SYMLINK][${BOLD_GREEN}INFO${NORM}] I am a symlink; actual script name: $SCRIPT_NAME_FULL_LONG";
     fi
   fi
@@ -381,7 +379,7 @@ function defaults()
   # Window layout
   echo -e " \
   ################### ###################\n \
-  #      Window 1   # #     Window 2    #\n \
+  #      Window 0   # #     Window 1    #\n \
   ################### ###################\n \
   # Pane 1 # Pane 2 # #                 #\n \
   # (bash) # (bash) # #     (bash)      #\n \
@@ -390,7 +388,7 @@ function defaults()
   ################### ###################\n \
   \n \
   ################### ###################\n \
-  #     Window 3    # #     Window 4    #\n \
+  #     Window 2    # #     Window 3    #\n \
   ################### ###################\n \
   #                 # #                 #\n \
   #      (bash)     # #      (bash)     #\n \
@@ -526,6 +524,7 @@ function create()
     "'sessions' command to identify running tmux sessions.";
 
     # Parse SESSION_DEFAULTS array and execute commands
+    # Order doesn't matter here, except for any order tmux requires
     for param in "${SESSION_DEFAULTS[@]}";
     do
       `$param`;
@@ -557,46 +556,84 @@ function create()
         fi
 
         # Relies on array matching these base values
-        #tmux new-session -d -s $i;
-        #tmux split-window -h -p 50 -t $i;
-        #tmux new-window -t $i;
-        #tmux new-window -t $i;
-        #tmux new-window -t $i;
-        #tmux select-window -t $i:0;
-        #tmux select-pane -L -t $i:0;
+        #{tmux new-session -d} -s $i;
+        #{tmux split-window -h -p 50} -t $i;
+        #{tmux new-window} -t $i;
+        #{tmux new-window} -t $i;
+        #{tmux new-window} -t $i;
+        #{tmux select-window -t:0} -t $i:0;
+        #{tmux select-pane -L -t:0} -t $i:0;
 
-        # Go through SESSION_DEFAULTS array line by line and execute custom commands
-        if [[ $debug4 == true ]];
-        then
-          echo "[DEBUG][CREATE] Create session executing: ${SESSION_DEFAULTS[0]} -s $i";
-          ${SESSION_DEFAULTS[0]} -s $i;
+        # Actual defaults array
+        # tmux new-session -d
+        # tmux split-window -h -p 50
+        # tmux new-window
+        # tmux new-window
+        # tmux new-window
+        # tmux select-window -t:0
+        # tmux select-pane -L -t:0
 
-          echo "[DEBUG][CREATE] Create session executing: ${SESSION_DEFAULTS[1]} -t $i";
-          ${SESSION_DEFAULTS[1]} -t $i;
-
-          echo "[DEBUG][CREATE] Create session executing: ${SESSION_DEFAULTS[2]} -t $i";
-          ${SESSION_DEFAULTS[2]} -t $i;
-
-          echo "[DEBUG][CREATE] Create session executing: ${SESSION_DEFAULTS[3]} -t $i";
-          ${SESSION_DEFAULTS[3]} -t $i;
-
-          echo "[DEBUG][CREATE] Create session executing: ${SESSION_DEFAULTS[4]} -t $i";
-          ${SESSION_DEFAULTS[4]} -t $i;
-
-          echo "[DEBUG][CREATE] Create session executing: ${SESSION_DEFAULTS[5]/-t:0/-t $i:0}";
-          ${SESSION_DEFAULTS[5]/-t:0/-t $i:0};
-
-          echo "[DEBUG][CREATE] Create session executing: ${SESSION_DEFAULTS[6]/-t:0/-t $i:0}";
-          ${SESSION_DEFAULTS[6]/-t:0/-t $i:0};
-        else
-          ${SESSION_DEFAULTS[0]} -s $i;
-          ${SESSION_DEFAULTS[1]} -t $i;
-          ${SESSION_DEFAULTS[2]} -t $i;
-          ${SESSION_DEFAULTS[3]} -t $i;
-          ${SESSION_DEFAULTS[4]} -t $i;
-          ${SESSION_DEFAULTS[5]/-t:0/-t $i:0};
-          ${SESSION_DEFAULTS[6]/-t:0/-t $i:0};
-        fi
+        # Parse SESSION_DEFAULTS array and execute commands
+        # Order matters, but shouldn't be dependent on the array
+        # Check each argument first
+        # Requires checks for 5 unique arguments
+        for param in "${SESSION_DEFAULTS[@]}";
+        do
+          case $param in
+            "tmux new-session -d")
+              if [[ $debug4 == true ]];
+              then
+                echo "[DEBUG][CREATE] Create session executing: $param -s $i";
+                $param -s $i;
+              else
+                $param -s $i;
+              fi
+            ;;
+            "tmux split-window -h -p 50")
+              if [[ $debug4 == true ]];
+              then
+                echo "[DEBUG][CREATE] Create session executing: $param -t $i";
+                $param -t $i;
+              else
+                $param -t $i;
+              fi
+            ;;
+            "tmux new-window")
+              if [[ $debug4 == true ]];
+              then 
+                echo "[DEBUG][CREATE] Create session executing: $param -t $i";
+                $param -t $i;
+              else 
+                $param -t $i;
+              fi
+            ;;
+            "tmux select-window -t:0")
+              if [[ $debug4 == true ]];
+              then 
+                echo "[DEBUG][CREATE] Create session executing: $param -t $i:0";
+                $param -t $i:0;
+              else 
+                $param -t $i:0;
+              fi
+            ;;
+            "tmux select-pane -L -t:0")
+              if [[ $debug4 == true ]];
+              then 
+                echo "[DEBUG][CREATE] Create session executing: $param -t $i:0";
+                $param -t $i:0;
+              else
+                $param -t $i:0;
+              fi
+            ;;
+            *)
+              if [[ $debug4 == true ]];
+              then
+                echo "[DEBUG][CREATE][${BOLD_RED}ERROR${NORM}] A tmux session creation command does not match an expected value: $param";
+              else
+                echo "[${BOLD_YELLOW}WARNING${NORM}] Potentially fatal session creation error. Run with -vvvv for details";
+              fi
+          esac
+        done
       else
         # [debug] Session exists, skipped
         if [[ $debug3 == true ]];
@@ -659,10 +696,16 @@ function destroy()
 
     # [console] No session specified
     echo "[${BOLD_RED}ERROR${NORM}] No session names specified";
+    echo -en "\n${BOLD}USAGE :: $0${NORM} [-v|vv|vvv|vvvv] ${BOLD}command${NORM} ${UL}options${NO_UL}\r\n
+      ${BOLD}destroy${NORM} [all] ${UL}existing_session${NO_UL}\r
+      \t(aliases: ${BOLD}stop${NORM}, ${BOLD}kill${NORM})\r
+
+      \tDestroy single, or all, existing tmux sessions. If 'all' is \r
+      \tspecified, this script will try to destroy all existing sessions. \r\n";
   elif [[ "${sessionArgs[$arg_pos]}" == "all" ]];
   then
     # Kill the server
-    echo -n "${BOLD_BG_RED}CAUTION${NORM} You're about to kill the tmux server and all sessions. Continue [y/N]? ";
+    echo -n "[${BOLD_BG_RED}CAUTION${NORM}] You're about to kill the tmux server and all sessions. Continue [y/N]? ";
     read -t 10 KILLCHOICE;
     
     case $KILLCHOICE in
@@ -671,13 +714,13 @@ function destroy()
         tmux kill-server &>/dev/null;
         
         # [console] All tmux sessions killed
-        echo "tmux server and all sessions have been ${BOLD_RED}killed${NORM}.";
+        echo "Any existing tmux server instances, and all sessions, have been ${BOLD_RED}killed${NORM}.";
       ;;
       n|N|no|No|NO)
         echo "Kill server ${BOLD_GREEN}aborted${NORM}.";
       ;;
       *)
-        echo "Invalid choice, server was ${BOLD_RED}not${NORM} killed.";
+        echo -e "\nInvalid choice, server was ${BOLD}not${NORM} killed.";
       ;;
     esac
   else
