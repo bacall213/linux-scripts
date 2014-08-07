@@ -28,9 +28,9 @@
 #   - brainmux.sh (required, this script)
 #
 # OPTIONAL COMPONENTS:
-#   - ~/.tmux.conf 
-#     - User-specific config
-#     - tmux, not this script, will read the config file, if present
+#   - $HOME/.tmux.conf 
+#     - User-specific config (keybindings, terminal settings, etc)
+#     - tmux interprets the config file, if present, NOT this script
 #
 # KNOWN ISSUES (KI):
 #   1) tmux.conf misconfigurations will cause script to fail
@@ -52,12 +52,14 @@
 #   - v1.8.2014-b2
 #     - create() function not as dependant on defaults array order
 #     - Updated a few messages
+#   - v1.8.2014-b3
+#     - Put CLI parsing in alphabetical order
+#     - Added friendly message for sessions() when there are no sessions
 #
 # TODO:
 #   1) Custom session
 #   2) Read and intelligently output .tmux.conf or /etc/tmux.conf in
 #      defaults function.
-#   3) Ensure all inputs are sanitized
 #
 ##############################################################################
 
@@ -1049,6 +1051,9 @@ function custom()
 ##############################################################################
 function sessions()
 {
+  # Local variables
+  local status;
+
   # [debug] Function start
   if [[ $debug4 == true ]];
   then
@@ -1056,7 +1061,16 @@ function sessions()
   fi
 
   # Call native tmux command for listing current sessions
-  tmux list-sessions;
+  # Errors are piped to /dev/null
+  tmux list-sessions 2>/dev/null;
+  status="$?" || return;
+
+  # If no sessions exist, display a special message, otherwise STDOUT from
+  #   'tmux list-sessions' will be used to show the existing session info
+  if [[ "$status" == "1" ]];
+  then
+    echo "[${BOLD_GREEN}INFO${NORM}] No tmux sessions exist.";
+  fi
 
   # [debug] Function end
   if [[ $debug4 == true ]];
@@ -1121,22 +1135,7 @@ then
   case $cli_cmd in
     autocompletelist)
       # Output list of script options for the autocomplete function
-      echo "attach connect create custom defaults destroy detach disconnect info help kill new sessions start stop ?";
-    ;;
-    create|Create|CREATE|start|Start|START|new|New|NEW)
-      # Start tmux session
-      # Session names parsed from global arguments variable
-      create;
-
-      # Just-in-case... (but this shouldn't be reached)
-      exit 0;
-    ;;
-    destroy|Destroy|DESTROY|kill|Kill|KILL|stop|Stop|STOP)
-      # Kill tmux session
-      destroy;
-
-      # Just-in-case... (but this shouldn't be reached)
-      exit 0;
+      echo "attach connect create start new custom defaults destroy kill stop detach disconnect help ? helpfull info sessions";
     ;;
     attach|Attach|ATTACH|connect|Connect|CONNECT)
       # Attach tmux session
@@ -1145,19 +1144,13 @@ then
       # Just-in-case... (but this shouldn't be reached)
       exit 1;
     ;;
-    detach|Detach|DETACH|disconnect|Disconnect|DISCONNECT)
-      # Detach tmux session
-      detach;
+    create|Create|CREATE|start|Start|START|new|New|NEW)
+      # Start tmux session
+      # Session names parsed from global arguments variable
+      create;
 
       # Just-in-case... (but this shouldn't be reached)
-      exit 1;
-    ;;
-    info|Info|INFO)
-      # Get information on running tmux sessions
-      info;
-
-      # Just-in-case... (but this shouldn't be reached)
-      exit 1;
+      exit 0;
     ;;
     custom|Custom|CUSTOM)
       # Create a new tmux session with custom properties
@@ -1173,9 +1166,16 @@ then
       # Just-in-case... (but this shouldn't be reached)
       exit 1;
     ;;
-    sessions|Sessions|SESSIONS)
-      # Show current tmux sessions
-      sessions;
+    destroy|Destroy|DESTROY|kill|Kill|KILL|stop|Stop|STOP)
+      # Kill tmux session
+      destroy;
+
+      # Just-in-case... (but this shouldn't be reached)
+      exit 0;
+    ;;
+    detach|Detach|DETACH|disconnect|Disconnect|DISCONNECT)
+      # Detach tmux session
+      detach;
 
       # Just-in-case... (but this shouldn't be reached)
       exit 1;
@@ -1190,6 +1190,20 @@ then
     helpfull|Helpfull|HELPFULL)
       # Call full help function
       fullhelp;
+
+      # Just-in-case... (but this shouldn't be reached)
+      exit 1;
+    ;;
+    info|Info|INFO)
+      # Get information on running tmux sessions
+      info;
+
+      # Just-in-case... (but this shouldn't be reached)
+      exit 1;
+    ;;
+    sessions|Sessions|SESSIONS)
+      # Show current tmux sessions
+      sessions;
 
       # Just-in-case... (but this shouldn't be reached)
       exit 1;
