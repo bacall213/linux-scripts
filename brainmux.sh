@@ -55,11 +55,19 @@
 #   - v1.8.2014-b3
 #     - Put CLI parsing in alphabetical order
 #     - Added friendly message for sessions() when there are no sessions
+#   - v1.8.2014-b4
+#     - Removed "custom session" flag
+#         - tmux configs are too complex for it to be realistic to 
+#           consider someone would want to enter a custom config at a 
+#           command line
+#     - Added "--attach|-attach" flag for unnamed session creation
+#         - Automatically attaches to newly created session
 #
 # TODO:
-#   1) Custom session
-#   2) Read and intelligently output .tmux.conf or /etc/tmux.conf in
+#   1) Read and intelligently output .tmux.conf or /etc/tmux.conf in
 #      defaults function.
+#   2) Broke create() function
+#       - Need to implement --attach|-attach for named sessions
 #
 ##############################################################################
 
@@ -164,9 +172,6 @@ function quickhelp()
     ${BOLD}disconnect${NORM} ${UL}existing_session${NO_UL}\r
     \t(alias: ${BOLD}detach${NORM})\r
 
-  ${UL}Create a Custom Session${NO_UL}\r
-    ${BOLD}custom${NORM} ${UL}session_properties${NO_UL}\r
-
   ${UL}Session Information${NO_UL}\r
     ${BOLD}info${NORM}\r
     ${BOLD}defaults${NORM}\r
@@ -175,7 +180,7 @@ function quickhelp()
   ${UL}General Script Options${NO_UL}\r
     ${BOLD}help${NORM} (this menu)\r
     ${BOLD}helpfull${NORM}\r
-    
+
     Debug/Verbose Mode (${BOLD}Must be first argument${NORM})\r
       -v    : Minimal verbosity/debug information\r
       -vv   : More verbose/some internal debug information\r
@@ -239,15 +244,7 @@ function fullhelp()
     ${BOLD}disconnect${NORM} ${UL}existing_session${NO_UL}\r
     \t(alias: ${BOLD}detach${NORM})\r
 
-    \tDisconnect from an existing tmux session.\r
- 
-  ${UL}Create a Custom Session${NO_UL}\r
-    ${BOLD}custom${NORM} ${UL}session_properties${NO_UL}\r
-
-    \tCreate a custom tmux session using provided ${UL}session_properties${NO_UL}.\r
-    \tAll tmux.conf defaults and script defaults are ignored.\r
-
-    \tFormat: ${BOLD_YELLOW}<TODO>${NORM}\n\n";
+    \tDisconnect from an existing tmux session.\n\n";
 
   # Page break
   read -p "(${BOLD}Press <Enter> for next page${NORM})";
@@ -511,8 +508,11 @@ function create()
   # Variables
   local sessionArgs;
   sessionArgs=("${cli_args[@]}");
+  local active_tmux_sessions;
+  local newest_timestamp=0;
+  local newest_session="";
 
-  if [[ "${sessionArgs[$arg_pos]}" == "" ]];
+  if [[ "${sessionArgs[$arg_pos]}" == "" || "${sessionArgs[$arg_pos]}" == "--attach" || "${sessionArgs[$arg_pos]}" == "-attach" ]];
   then
     # [debug] No session specified, creating generic session
     if [[ $debug3 == true ]];
@@ -520,17 +520,64 @@ function create()
       echo "[DEBUG][CREATE][${BOLD_YELLOW}WARN${NORM}] No session names specified";
     fi
 
-    # [console] No session specified, creating generic session
-    echo "[${BOLD_YELLOW}WARNING${NORM}] No session name specified," \
-    "tmux will choose one for you. Run this script with the" \
-    "'sessions' command to identify running tmux sessions.";
+#    # [console] No session specified, creating generic session
+#    echo "[${BOLD_YELLOW}WARNING${NORM}] No session name specified," \
+#    "tmux will choose one for you. Run this script with the" \
+#    "'sessions' command to identify running tmux sessions.";
 
+    if [[ $debug4 == true ]];
+    then
+      echo "[DEBUG][CREATE][${BOLD_GREEN}INFO${NORM}] Creating unnamed session";
+    fi
     # Parse SESSION_DEFAULTS array and execute commands
     # Order doesn't matter here, except for any order tmux requires
     for param in "${SESSION_DEFAULTS[@]}";
     do
       `$param`;
     done
+
+    active_tmux_sessions=( $(tmux list-sessions -F "#{session_created} #{session_name}") );
+
+    if [[ $debug4 == true ]];
+    then
+      echo "[DEBUG][CREATE][${BOLD_GREEN}INFO${NORM}] tmux session list...";
+      echo "${active_tmux_sessions[@]}";
+    fi
+
+    if [[ "${sessionArgs[$arg_pos]}" == "--attach" || "${sessionArgs[$arg_pos]}" == "-attach" ]];
+    then
+      if [[ $debug4 == true ]];
+      then
+        echo "[DEBUG][CREATE][${BOLD_GREEN}INFO${NORM}] Found --attach or -attach flag with unnamed session creation";
+      fi
+
+      # [console] Automatically attaching to unnamed session
+      for (( i = 0 ; i < ${#active_tmux_sessions[@]} ; i++ ));
+      do
+        # Even values are the timestamp
+        if [[ $(( i % 2 )) == 0 ]];
+        then
+          if [[ ${active_tmux_sessions[$i]} > $newest_timestamp ]];
+          then
+            newest_timestamp=${active_tmux_sessions[$i]};
+            newest_session=${active_tmux_sessions[$i+1]};
+          fi
+        fi
+      done
+
+      if [[ $debug4 == true ]];
+      then
+        echo "[DEBUG][CREATE][${BOLD_GREEN}INFO${NORM}] Newest session found is: $newest_session (timestamp=$newest_timestamp)";
+      fi
+      
+      # Attach to newly created, unnamed, session
+      tmux attach-session -t $newest_session; 
+    else
+      # [console] No session specified, creating generic session
+      echo "[${BOLD_YELLOW}WARNING${NORM}] No session name specified," \
+      "tmux will choose one for you. Run this script with the" \
+      "'sessions' command to identify running tmux sessions.";
+    fi
   else
     # Check sessions at command line, create if they don't exist, otherwise error
     # Start from array element 1 = elements after "create" command
@@ -646,6 +693,20 @@ function create()
         # [console] Session exists, skipped
         echo "[${BOLD_YELLOW}WARNING${NORM}] Session '${BOLD}$i${NORM}' exists. Skipped.";
       fi
+
+#      if [[ "${#sessionArgs[@]}" == "3" && "$i" == "--attach" ]];
+#      then 
+#        if [[ $debug4 == true ]];
+#        then 
+#          echo "[DEBUG][CREATE][${BOLD_GREEN}INFO${NORM}] 1 session specified and --attach flag was found";
+#        fi   
+#
+#        echo "${sessionArgs[@]}";
+#        echo "Session: ${sessionArgs[$arg_pos]}";
+#
+#        break;
+#      fi
+
     done
   fi
 
@@ -1004,42 +1065,6 @@ function info()
 
 ##############################################################################
 ##############################################################################
-# FUNCTION 
-##############################################################################
-# NAME: custom
-# PURPOSE: Create a custom tmux session
-# ARGUMENTS:
-# - Session properties
-# OUTPUT:
-# - None
-##############################################################################
-function custom()
-{
-  # [debug] Function start
-  if [[ $debug4 == true ]];
-  then
-    echo "[DEBUG][CUSTOM][${BOLD_GREEN}INFO${NORM}] Entering 'custom' function";
-  fi
-
-  echo "${BOLD_YELLOW}<TODO>${NORM}";
-
-
-  # [debug] Function end
-  if [[ $debug4 == true ]];
-  then
-    echo "[DEBUG][CUSTOM][${BOLD_GREEN}INFO${NORM}] Leaving 'custom' function";
-  fi
-
-  # Exit gracefully
-  exit 0;
-}
-
-
-
-
-
-##############################################################################
-##############################################################################
 # FUNCTION
 ##############################################################################
 # NAME: sessions
@@ -1135,7 +1160,7 @@ then
   case $cli_cmd in
     autocompletelist)
       # Output list of script options for the autocomplete function
-      echo "attach connect create start new custom defaults destroy kill stop detach disconnect help ? helpfull info sessions";
+      echo "attach connect create start new defaults destroy kill stop detach disconnect help ? helpfull info sessions";
     ;;
     attach|Attach|ATTACH|connect|Connect|CONNECT)
       # Attach tmux session
@@ -1151,13 +1176,6 @@ then
 
       # Just-in-case... (but this shouldn't be reached)
       exit 0;
-    ;;
-    custom|Custom|CUSTOM)
-      # Create a new tmux session with custom properties
-      custom;
-
-      # Just-in-case... (but this shouldn't be reached)
-      exit 1;
     ;;
     defaults|Defaults|DEFAULTS)
       # Show script-default laytout
