@@ -62,12 +62,14 @@
 #           command line
 #     - Added "--attach|-attach" flag for unnamed session creation
 #         - Automatically attaches to newly created session
+#   - v1.8.2014-b5
+#     - Moved unnamed session identification to own function
+#     - Cleaned up process for unnamed session auto-attach
+#     - Implemented --attach|-attach for named sessions
 #
 # TODO:
 #   1) Read and intelligently output .tmux.conf or /etc/tmux.conf in
 #      defaults function.
-#   2) Broke create() function
-#       - Need to implement --attach|-attach for named sessions
 #
 ##############################################################################
 
@@ -136,6 +138,12 @@ debug1=false;                 # -v    : Minimal debug info
 debug2=false;                 # -vv   : Some debug info
 debug3=false;                 # -vvv  : Most debug info
 debug4=false;                 # -vvvv : All debug info
+newest_tmux_session="-1";     # Used by find_newest_session() function
+                              #  Stores session name for last-created,
+                              #  nameless, session
+newest_tmux_timestamp="-1";   # Used by find_newest_session() function
+                              #  Stores session timestamp for last-created,
+                              #  nameless, session
 
 
 ##############################################################################
@@ -488,6 +496,77 @@ function check_session()
 ##############################################################################
 # FUNCTION
 ##############################################################################
+# NAME: find_newest_session
+# PURPOSE: Identify the newest tmux session created based on timestamp
+# ARGUMENTS: 
+# - None
+# OUTPUT:
+# - Sets global variable 'newest_tmux_session' to the name of the 
+#     last-created tmux session
+# - Sets global variable 'newest_tmux_timestamp' to the timestamp for the
+#     last-created tmux session
+##############################################################################
+function find_newest_session()
+{
+  # [debug] Function start
+  if [[ $debug4 == true ]];
+  then
+    echo "[DEBUG][FIND_NEWEST_SESSION][${BOLD_GREEN}INFO${NORM}] Entering 'find_newest_session' function";
+  fi
+
+  # Variables
+  local active_tmux_sessions;
+
+  active_tmux_sessions=( $(tmux list-sessions -F "#{session_created} #{session_name}") );
+
+  if [[ $debug4 == true ]];
+  then
+    echo "[DEBUG][FIND_NEWEST_SESSION][${BOLD_GREEN}INFO${NORM}] tmux session list...";
+    echo "${active_tmux_sessions[@]}";
+  fi
+
+  # Parse active sessions list
+  for (( session_index = 0 ; session_index < ${#active_tmux_sessions[@]} ; session_index++ ));
+  do   
+    # Even values are the timestamp
+    if [[ $(( session_index % 2 )) == 0 ]];
+    then 
+      if [[ ${active_tmux_sessions[$session_index]} > $newest_tmux_timestamp ]];
+      then 
+        newest_tmux_timestamp=${active_tmux_sessions[$session_index]};
+        newest_tmux_session=${active_tmux_sessions[$session_index+1]};
+      fi   
+    fi   
+  done 
+
+  if [[ $debug4 == true ]];
+  then
+    echo "[DEBUG][FIND_NEWEST_SESSION][${BOLD_GREEN}INFO${NORM}] Newest" \
+          "session found is: $newest_tmux_session" \
+          "(timestamp=$newest_tmux_timestamp)";
+  fi
+
+  # [debug] Function end
+  if [[ $debug4 == true ]];
+  then
+    echo "[DEBUG][FIND_NEWEST_SESSION][${BOLD_GREEN}INFO${NORM}] Leaving" \
+          "'find_newest_session' function";
+  fi
+  
+  # Return
+  # newest_tmux_session is a global variable set by this function
+  # newest_tmux_timestamp is a global variable set by this function
+
+  # No exit
+}
+
+
+
+
+##############################################################################
+##############################################################################
+# FUNCTION
+##############################################################################
 # NAME: create 
 # PURPOSE: Create/start new tmux session
 # ARGUMENTS:
@@ -507,11 +586,10 @@ function create()
 
   # Variables
   local sessionArgs;
-  sessionArgs=("${cli_args[@]}");
-  local active_tmux_sessions;
-  local newest_timestamp=0;
-  local newest_session="";
 
+  sessionArgs=("${cli_args[@]}");
+
+  # Check for no session name or "-attach|--attach"
   if [[ "${sessionArgs[$arg_pos]}" == "" || "${sessionArgs[$arg_pos]}" == "--attach" || "${sessionArgs[$arg_pos]}" == "-attach" ]];
   then
     # [debug] No session specified, creating generic session
@@ -519,11 +597,6 @@ function create()
     then
       echo "[DEBUG][CREATE][${BOLD_YELLOW}WARN${NORM}] No session names specified";
     fi
-
-#    # [console] No session specified, creating generic session
-#    echo "[${BOLD_YELLOW}WARNING${NORM}] No session name specified," \
-#    "tmux will choose one for you. Run this script with the" \
-#    "'sessions' command to identify running tmux sessions.";
 
     if [[ $debug4 == true ]];
     then
@@ -536,49 +609,163 @@ function create()
       `$param`;
     done
 
-    active_tmux_sessions=( $(tmux list-sessions -F "#{session_created} #{session_name}") );
-
-    if [[ $debug4 == true ]];
-    then
-      echo "[DEBUG][CREATE][${BOLD_GREEN}INFO${NORM}] tmux session list...";
-      echo "${active_tmux_sessions[@]}";
-    fi
-
+    # Check for "--attach" or "-attach" flags
     if [[ "${sessionArgs[$arg_pos]}" == "--attach" || "${sessionArgs[$arg_pos]}" == "-attach" ]];
     then
       if [[ $debug4 == true ]];
       then
-        echo "[DEBUG][CREATE][${BOLD_GREEN}INFO${NORM}] Found --attach or -attach flag with unnamed session creation";
+        echo "[DEBUG][CREATE][${BOLD_GREEN}INFO${NORM}] Found --attach or" \
+              "-attach flag with unnamed session creation";
       fi
 
-      # [console] Automatically attaching to unnamed session
-      for (( i = 0 ; i < ${#active_tmux_sessions[@]} ; i++ ));
-      do
-        # Even values are the timestamp
-        if [[ $(( i % 2 )) == 0 ]];
-        then
-          if [[ ${active_tmux_sessions[$i]} > $newest_timestamp ]];
-          then
-            newest_timestamp=${active_tmux_sessions[$i]};
-            newest_session=${active_tmux_sessions[$i+1]};
-          fi
-        fi
-      done
+      # Call find_newest_session function to identify last-created tmux session
+      find_newest_session;
 
-      if [[ $debug4 == true ]];
+      # Check for a sane return value
+      if [[ "$newest_tmux_session" != "-1" ]];
       then
-        echo "[DEBUG][CREATE][${BOLD_GREEN}INFO${NORM}] Newest session found is: $newest_session (timestamp=$newest_timestamp)";
+        if [[ $debug4 == true ]];
+        then
+          echo "[DEBUG][CREATE][${BOLD_GREEN}INFO${NORM}]" \
+                "find_newest_session() returned session name:" \
+                "$newest_tmux_session";
+        fi
+
+        # Attach to newly created, unnamed, session
+        tmux attach-session -t $newest_tmux_session;
+      else
+        echo "[${BOLD_YELLOW}WARNING${NORM}] 'newest_tmux_session' was not set" \
+              "correctly. This script will continue, but cannot auto-attach" \
+              "to the newly created session.";
       fi
-      
-      # Attach to newly created, unnamed, session
-      tmux attach-session -t $newest_session; 
     else
       # [console] No session specified, creating generic session
       echo "[${BOLD_YELLOW}WARNING${NORM}] No session name specified," \
-      "tmux will choose one for you. Run this script with the" \
-      "'sessions' command to identify running tmux sessions.";
+            "tmux will choose one for you. Run this script with the" \
+            "'sessions' command to identify running tmux sessions.";
+    fi
+  elif [[ "${sessionArgs[$arg_pos+1]}" == "--attach" || "${sessionArgs[$arg_pos+1]}" == "-attach" ]];
+  then
+    # Catch the creation of a single named session followed by a request to automatically attach it
+
+    # [debug] Identify parsed session name, indicate "--attach|-attach" was found
+    if [[ $debug4 == true ]];
+    then
+      echo "[DEBUG][CREATE][${BOLD_GREEN}INFO${NORM}] Noticed request to attach session after" \
+            "creation (-attach|--attach parsed from '\${sessionArgs[\$arg_pos+1]}'";
+      echo "[DEBUG][CREATE][${BOLD_GREEN}INFO${NORM}] Parsed session name: ${sessionArgs[$arg_pos]}"; 
+    fi
+
+    # Check to see if a session by the same name exists
+    # 'check_session' updates $tmux_status variable
+    # Session does not exist: tmux_status = 1
+    # Session exists: tmux_status = 0
+    check_session "${sessionArgs[$arg_pos]}";
+    
+    # If check_session didn't find an existing session, create it
+    if [[ "$tmux_status" == "1" ]];
+    then
+      # [debug] Creating session
+      if [[ $debug3 == true ]];
+      then
+        echo "[DEBUG][CREATE][${BOLD_GREEN}INFO${NORM}] Creating session ${sessionArgs[$arg_pos]}";
+      fi
+
+      # Relies on array matching these base values
+      #{tmux new-session -d} -s ${sessionArgs[$arg_pos]};
+      #{tmux split-window -h -p 50} -t ${sessionArgs[$arg_pos]};
+      #{tmux new-window} -t ${sessionArgs[$arg_pos]};
+      #{tmux new-window} -t ${sessionArgs[$arg_pos]};
+      #{tmux new-window} -t ${sessionArgs[$arg_pos]};
+      #{tmux select-window -t:0} -t ${sessionArgs[$arg_pos]}:0;
+      #{tmux select-pane -L -t:0} -t ${sessionArgs[$arg_pos]}:0;
+
+      # Actual defaults array
+      # tmux new-session -d
+      # tmux split-window -h -p 50
+      # tmux new-window
+      # tmux new-window
+      # tmux new-window
+      # tmux select-window -t:0
+      # tmux select-pane -L -t:0
+
+      # Parse SESSION_DEFAULTS array and execute commands
+      # Order matters, but shouldn't be dependent on the array
+      # Check each argument first
+      # Requires checks for 5 unique arguments
+      for param in "${SESSION_DEFAULTS[@]}";
+      do
+        case $param in
+          "tmux new-session -d")
+            if [[ $debug4 == true ]];
+            then
+              echo "[DEBUG][CREATE] Create session executing: $param -s ${sessionArgs[$arg_pos]}";
+              $param -s ${sessionArgs[$arg_pos]};
+            else
+              $param -s ${sessionArgs[$arg_pos]};
+            fi
+          ;;
+          "tmux split-window -h -p 50")
+            if [[ $debug4 == true ]];
+            then
+              echo "[DEBUG][CREATE] Create session executing: $param -t ${sessionArgs[$arg_pos]}";
+              $param -t ${sessionArgs[$arg_pos]};
+            else
+              $param -t ${sessionArgs[$arg_pos]};
+            fi
+          ;;
+          "tmux new-window")
+            if [[ $debug4 == true ]];
+            then 
+              echo "[DEBUG][CREATE] Create session executing: $param -t ${sessionArgs[$arg_pos]}";
+              $param -t ${sessionArgs[$arg_pos]};
+            else 
+              $param -t ${sessionArgs[$arg_pos]};
+            fi
+          ;;
+          "tmux select-window -t:0")
+            if [[ $debug4 == true ]];
+            then 
+              echo "[DEBUG][CREATE] Create session executing: $param -t ${sessionArgs[$arg_pos]}:0";
+              $param -t ${sessionArgs[$arg_pos]}:0;
+            else 
+              $param -t ${sessionArgs[$arg_pos]}:0;
+            fi
+          ;;
+          "tmux select-pane -L -t:0")
+            if [[ $debug4 == true ]];
+            then 
+              echo "[DEBUG][CREATE] Create session executing: $param -t ${sessionArgs[$arg_pos]}:0";
+              $param -t ${sessionArgs[$arg_pos]}:0;
+            else
+              $param -t ${sessionArgs[$arg_pos]}:0;
+            fi
+          ;;
+          *)
+            if [[ $debug4 == true ]];
+            then
+              echo "[DEBUG][CREATE][${BOLD_RED}ERROR${NORM}] A tmux session creation command does not match an expected value: $param";
+            else
+              echo "[${BOLD_YELLOW}WARNING${NORM}] Potentially fatal session creation error. Run with -vvvv for details";
+            fi
+        esac
+      done
+
+      # Attach to named session
+      tmux attach-session -t ${sessionArgs[$arg_pos]};
+    else
+      # [debug] Session exists, skipped
+      if [[ $debug3 == true ]];
+      then
+        echo "[DEBUG][CREATE][${BOLD_YELLOW}WARN${NORM}] Session '${BOLD}${sessionArgs[$arg_pos]}${NORM}' exists. Skipped.";
+      fi
+
+      # [console] Session exists, skipped
+      echo "[${BOLD_YELLOW}WARNING${NORM}] Session '${BOLD}${sessionArgs[$arg_pos]}${NORM}' exists. Skipped.";
     fi
   else
+    # No special circumstances, process all provided session names and create them if possible
+    
     # Check sessions at command line, create if they don't exist, otherwise error
     # Start from array element 1 = elements after "create" command
     for i in "${sessionArgs[@]:$arg_pos}"
@@ -693,20 +880,6 @@ function create()
         # [console] Session exists, skipped
         echo "[${BOLD_YELLOW}WARNING${NORM}] Session '${BOLD}$i${NORM}' exists. Skipped.";
       fi
-
-#      if [[ "${#sessionArgs[@]}" == "3" && "$i" == "--attach" ]];
-#      then 
-#        if [[ $debug4 == true ]];
-#        then 
-#          echo "[DEBUG][CREATE][${BOLD_GREEN}INFO${NORM}] 1 session specified and --attach flag was found";
-#        fi   
-#
-#        echo "${sessionArgs[@]}";
-#        echo "Session: ${sessionArgs[$arg_pos]}";
-#
-#        break;
-#      fi
-
     done
   fi
 
