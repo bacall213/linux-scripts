@@ -66,7 +66,7 @@
 #     - Moved unnamed session identification to own function
 #     - Cleaned up process for unnamed session auto-attach
 #     - Implemented --attach|-attach for named sessions
-#   - v1.8.2014-v6
+#   - v1.8.2014-b6
 #     - Eliminated uncaught error output from 'attach' function
 #     - Added more helpful output to 'attach' function
 #     - Added ability to instruct 'sessions' function to exit or not
