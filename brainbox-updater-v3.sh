@@ -30,15 +30,9 @@
 #   - <TODO>
 #
 # KNOWN ISSUES (KI):
-#   1)  PROBLEM: Output can be unpredictable due to the order of flags used.
-#       STATUS: Still testing recent fixes.
-#
-#   2)  PROBLEM: Limited checking is done for incompatible flags.
-#       STATUS: Fixed
-#       SOLUTION: Reduce flag complexity and check for -upgrade and -update at the same time.
-#
-#   3)  Problem: Apt-Upgrade output doesn't have [UPDATER] appended to it.
+#   1)  Problem: Apt-Upgrade output doesn't have [UPDATER] appended to it.
 #       Status: Will not fix; not feasible
+#
 #
 # CONVENTIONS USED:
 #   - APT acquire: Update package repositories (apt-get update)
@@ -50,6 +44,16 @@
 # REVISION HISTORY:
 #   - v1.8.2014-b1: 
 #     - Initial public release
+#   - v1.8.2014-b2:
+#     - Moved to single log file 
+#       - Filename: brainbox_updater_<date>.txt
+#       - Added seconds into log file name
+#       - Removed deletion of existing logs from apt-get functions
+#         - No longer necessary as it's unlikely the script will be executed
+#           more than once within a 1-second period.
+#     - Moved more logging to conform to "debug<1-4>" standard
+#     - Moved time variables to global for simplicity
+#     - General cleanup
 #
 # TODO:
 #   1) [DONE] Create single "logging" function that will handle:
@@ -67,9 +71,9 @@
 #       - Handle log type (update, debug, start, stop, fail) 
 #       - Handle logging if-else logic (accept >= 1 logging message)
 #         - e.g. if debug logging, output this, else, output that
-#   2) Build a better argument parsing system
+#   2) [DONE] Build a better argument parsing system
 #       - To resolve KI #1 and KI #2
-#   3) Fix versioning prior to release
+#   3) [DONE] Fix versioning prior to release
 #   4) Re-write variables/functions to conform to Google code
 #         standards.
 #   5) Update internal documentation
@@ -85,7 +89,7 @@
 #   14) Update logger function to use new DEBUG levels
 #   15) Consider adding a "full" vs "short" flag to the usage function 
 #       instead of having two separate functions.
-#   16) Install check in usage functions so that it can be run without
+#   16) [DONE] Install check in usage functions so that it can be run without
 #       exiting afterward.
 #   17) Re-write log check function to handle "check" and "cleanup"
 #       arguments. Consolidate to "check" and "cleanup" functions into
@@ -129,6 +133,10 @@
 #   23) Put ; do and ; then on the same lines as while, if...
 #   24) Replace instances of external calls with builtins, where possible
 #       1) aptopts removal of "-q" with sed replaced by ${aptopts//-q/}
+#   25) Cleanup logs function
+#   26) Redo loops with built-ins
+#   27) Remove syslog output from "debug<1-4>" statements and add logger 
+#       calls elsewhere when syslog logging should be done.
 #
 ##############################################################################
 
@@ -138,37 +146,6 @@
 # UPDATER DOCUMENTATION
 ##############################################################################
 # 
-# Variables
-#   Variable Name               Type    : SCOPE   : Description
-#   -------------               ----      -----     -----------
-#   _FLAGNAME_                  _TYPE_  : _SCOPE_ : _DESCRIPTION_
-#
-#   os_nickname                 STRING  : GLOBAL  : Customize the OS name used
-#   testonly                    BOOL    : GLOBAL  : Don't
-#   assumeyes                   BOOL    : GLOBAL  : Assume "yes" for most prompts
-#   aptopts                     STRING  : GLOBAL  : Store apt-get options
-#   aptcmd                      STRING  : GLOBAL  : Store apt-get path
-#   updater_exit                INT     : GLOBAL  : Track exit code
-#   start_time_epoch            STRING  : GLOBAL  : Start time for log
-#   start_time_pretty           STRING  : LOCAL   : A pretty start time
-#   end_time_epoch              STRING  : GLOBAL  : End time for log
-#   end_time_pretty             STRING  : LOCAL   : A pretty end time
-#   fail_time_epoch             STRING  : LOCAL   : Failure time
-#   fail_time_pretty            STRING  : LOCAL   : A pretty end time
-#   allargs                     STRING  : GLOBAL  : Container for all arguments
-#   keeplogs                    BOOL    : GLOBAL  : Preserve this scripts' temp logs
-#   logpath                     STRING  : GLOBAL  : Log path in use
-#   dlogpath                    STRING  : GLOBAL  : Default log path (/tmp)
-#   blogpath                    STRING  : GLOBAL  : Backup log path (~/)
-#   update_log                   STRING  : GLOBAL  : apt-get update temp log
-#   upgrade_log                  STRING  : GLOBAL  : apt-get upgrade temp log
-#   forcefail                   BOOL    : GLOBAL  : Force failure for testing
-#   debug1                      BOOL    : GLOBAL  : Debug level 1
-#   debug2                      BOOL    : GLOBAL  : Debug level 2
-#   debug3                      BOOL    : GLOBAL  : Debug level 3
-#   debug4                      BOOL    : GLOBAL  : Debug level 4
-#   
-#
 # APT flags
 #   apt-get <CMD> -s                    :   Simulate; No action
 #   apt-get <CMD> -q                    :   Quiet mode
@@ -218,6 +195,19 @@ declare -r BOLD_YELLOW=${BOLD}$(tput setaf 3);    # Bold yellow
 declare -r BOLD_GREEN=${BOLD}$(tput setaf 2);     # Bold green
 declare -r BOLD_BG_GREEN=${BOLD}$(tput setab 2);  # Bold w/green background
 
+# Script name
+## /full/cannonical/name.sh
+declare -r SCRIPT_NAME_FULL_LONG=$(readlink -e "$0");
+
+## name.sh
+declare -r SCRIPT_NAME_FULL_SHORT=$(basename "$SCRIPT_NAME_FULL_LONG");
+
+## /full/cannonical/name
+declare -r SCRIPT_NAME_BASE_LONG=${SCRIPT_NAME_FULL_LONG%%.sh};
+
+## name
+declare -r SCRIPT_NAME_BASE_SHORT=$(basename "$SCRIPT_NAME_BASE_LONG");
+
 # Exit Codes Array
 declare -r EXITCODES=(
   "0" "Normal exit"
@@ -243,33 +233,31 @@ declare -r EXITCODES=(
 
 # Functions Array
 declare -r FUNCTIONS=(
-  "interrupts" "Detect and handle user interrupts"
-  "check_debug" "Forced check for debug flag"
-  "exit_codes" "Display exit codes for reference"
-  "calc_runtime" "Caclulate final script run time"
-  "check_logs_dir" "Check logs directory to make sure it's writable"
-  "cleanup_logs" "Cleanup logs before script exit"
-  "usage_short" "Display [short] script help"
-  "usage_full" "Display [full] script help"
-  "find_apt" "Find apt-get executable"
-  "force_fail" "Output fail-whale when forced or when all else fails"
-  "check_notify" "Check for notify-send for GUI flag"
-  "check_force" "Confirm the use of '--force-yes'"
   "apt_update" "Run apt-get update"
   "apt_upgrade" "Run apt-get dist-upgrade"
-  "check_special" "Check for special message requirements"
-  "functions_reference" "Display functions list and short summary"
+  "brainbox_logger" "One logging function to handle it all"
+  "calc_runtime" "Caclulate final script run time"
+  "check_force" "Confirm the use of '--force-yes'"
+  "check_logs_dir" "Check logs directory to make sure it's writable"
+  "check_notify" "Check for notify-send for GUI flag"
+  "cleanup_logs" "Cleanup logs before script exit"
   "docs" "Output all built-in documentation for updater script"
-  "brainbox_logger" "One logging function to handle it all");
+  "exit_codes" "Display exit codes for reference"
+  "find_apt" "Find apt-get executable"
+  "force_fail" "Output fail-whale when forced or when all else fails"
+  "functions_reference" "Display functions list and short summary"
+  "interrupts" "Detect and handle user interrupts"
+  "usage_full" "Display [full] script help"
+  "usage_short" "Display [short] script help");
 
 # Notify-OSD Constants
 declare -r GUI_ICON_WORKING="/usr/share/icons/hicolor/48x48/status/aptdaemon-working.png";
 declare -r GUI_ICON_FAIL="/usr/share/icons/hicolor/scalable/mimetypes/text-x-apport.svg";
 
-# os_nickname: Set variable to customize the updater/OS nickname
+# updater_nickname: Set variable to customize the updater/OS nickname
 #   e.g. You might use "Crobuntu" if you're running Ubuntu on 
 #         a [natively] ChromeOS device
-os_nickname="Brainbox";
+updater_nickname="Brainbox";
 
 # Flag-specific variables
 testonly=false;
@@ -291,7 +279,7 @@ debug4=false;
 
 # Notify-OSD Paths
 notify_send_cmd="";
-gui_title="$os_nickname Updater";
+gui_title="$updater_nickname Updater";
 gui_msg="";
 
 # Apt-get Options
@@ -304,15 +292,21 @@ aptopts="-q --assume-yes";
 aptcmd="";
 
 # Logging
-update_log="$(date +'%Y%m%d_%H%M%Z')_update_log.txt";
-upgrade_log="$(date +'%Y%m%d_%H%M%Z')_upgrade_log.txt";
-logpath="";
-dlogpath="/tmp";
-blogpath="~/";
+updater_log="brainbox_updater_$(date +'%Y%m%d_%H%M%S%Z').txt";
+log_path="";
+default_log_path="/tmp";
+backup_log_path="~/";
 
 # Global timestamps
 start_time_epoch="";
+start_time_pretty="";
 end_time_epoch="";
+end_time_pretty="";
+run_time_epoch="";
+run_time_pretty="";
+fail_time_epoch="";
+fail_time_pretty="";
+
 
 # Track updater exit code
 updater_exit=0;
@@ -334,7 +328,8 @@ function interrupts
   # [debug] Function start
   if [[ $debug4 == true ]];
   then
-    echo "[DEBUG][INTERRUPTS][${BOLD_GREEN}INFO${NORM}] Entering 'interrupts' function";
+    echo "[DEBUG][INTERRUPTS][${BOLD_GREEN}INFO${NORM}]" \
+          "Entering 'interrupts' function";
   fi
 
   # Cleanup
@@ -348,7 +343,8 @@ function interrupts
   # [debug] Function end
   if [[ $debug4 == true ]];
   then
-    echo "[DEBUG][INTERRUPTS][${BOLD_GREEN}INFO${NORM}] Leaving 'interrupts' function";
+    echo "[DEBUG][INTERRUPTS][${BOLD_GREEN}INFO${NORM}]" \
+          "Leaving 'interrupts' function";
   fi
 
   exit 99;
@@ -374,11 +370,14 @@ function exit_codes
   # [debug] Function start
   if [[ $debug4 == true ]];
   then
-    echo "[DEBUG][EXIT_CODES][${BOLD_GREEN}INFO${NORM}] Entering 'exit_codes' function";
+    echo "[DEBUG][EXIT_CODES][${BOLD_GREEN}INFO${NORM}]" \
+          "Entering 'exit_codes' function";
   fi
 
   # Section title
-  echo -en "#======================#\n# EXIT CODES REFERENCE #\n#======================#\n\n";
+  printf "%s\n%s\n%s\n\n" "|= ================== =|" \
+                          "|${BOLD} EXIT CODES REFERENCE ${NORM}|" \
+                          "|= ================== =|";
 
   # Table formatting
   # Max-width is a self-imposed 70 chars
@@ -397,13 +396,8 @@ function exit_codes
     then
       printf '%-60s\n' "${EXITCODES[$i]}";
     else
-      if [[ $debug4 == true ]];
-      then
-        echo "[DEBUG][EXIT_CODES][BUG][${boldbgregd}FATAL${NORM}] Unexpected value in array parsing loop";
-        brainbox_logger "debug" "[DEBUG][EXIT_CODES][BUG][FATAL] Unexpected value in array parsing loop";
-      else
-        brainbox_logger "debug" "[DEBUG][EXIT_CODES][BUG][FATAL] Unexpected value in array parsing loop";
-      fi
+      brainbox_logger "debug4" "${BOLD_BG_RED}FATAL${NORM} Unexpected value in array parsing loop";
+      brainbox_logger "syslog" "[DEBUG][EXIT_CODES][BUG][FATAL] Unexpected value in array parsing loop";
     fi
     
     # Increment counter
@@ -413,7 +407,8 @@ function exit_codes
   # [debug] Function end
   if [[ $debug4 == true ]];
   then
-    echo "[DEBUG][EXIT_CODES][${BOLD_GREEN}INFO${NORM}] Leaving 'exit_codes' function";
+    echo "[DEBUG][EXIT_CODES][${BOLD_GREEN}INFO${NORM}]" \
+          "Leaving 'exit_codes' function";
   fi
 
   # Check for flag to exit immediately after execution
@@ -444,11 +439,14 @@ function functions_reference
   # [debug] Function start
   if [[ $debug4 == true ]];
   then
-    echo "[DEBUG][FUNCTIONS_REFERENCE][${BOLD_GREEN}INFO${NORM}] Entering 'functions_reference' function";
+    echo "[DEBUG][FUNCTIONS_REFERENCE][${BOLD_GREEN}INFO${NORM}] Entering" \
+          "'functions_reference' function";
   fi
 
   # Section title
-  echo -en "#=====================#\n# FUNCTIONS REFERENCE #\n#=====================#\n\n";
+  printf "%s\n%s\n%s\n\n" "|= ================= =|" \
+                          "|${BOLD} FUNCTIONS REFERENCE ${NORM}|" \
+                          "|= ================= =|";
 
   # Table formatting
   # Max-width is a self-imposed 70 chars
@@ -469,7 +467,8 @@ function functions_reference
     else
       if [[ $debug4 == true ]];
       then
-        echo "[DEBUG][FUNCTIONS_REFERENCE][BUG][${boldbgregd}FATAL${NORM}] Unexpected value in array parsing loop";
+        echo "[DEBUG][FUNCTIONS_REFERENCE][BUG][${boldbgregd}FATAL${NORM}]" \
+              "Unexpected value in array parsing loop";
         brainbox_logger "debug" "[DEBUG][FUNCTIONS_REFERENCE][BUG][FATAL] Unexpected value in array parsing loop";
       else
         brainbox_logger "debug" "[DEBUG][FUNCTIONS_REFERENCE][BUG][FATAL] Unexpected value in array parsing loop";
@@ -486,7 +485,8 @@ function functions_reference
      # [debug] Function end
     if [[ $debug4 == true ]];
     then
-      echo "[DEBUG][FUNCTIONS_REFERENCE][${BOLD_GREEN}INFO${NORM}] Leaving 'functions_reference' function";
+      echo "[DEBUG][FUNCTIONS_REFERENCE][${BOLD_GREEN}INFO${NORM}] Leaving" \
+            "'functions_reference' function";
     fi
 
     # Set exit code
@@ -499,7 +499,8 @@ function functions_reference
     # [debug] Function end
     if [[ $debug4 == true ]];
     then
-      echo "[DEBUG][FUNCTIONS_REFERENCE][${BOLD_GREEN}INFO${NORM}] Leaving 'functions_reference' function";
+      echo "[DEBUG][FUNCTIONS_REFERENCE][${BOLD_GREEN}INFO${NORM}] Leaving" \
+            "'functions_reference' function";
     fi
   fi
 }
@@ -524,17 +525,30 @@ function docs
     echo "[DEBUG][DOCS][${BOLD_GREEN}INFO${NORM}] Entering 'DOCS' function";
   fi
 
-  echo "#====================================================================#";
-  echo "#                                                                    #";
-  echo "# UPDATER DOCUMENTATION                                              #";
-  echo "#                                                                    #";
-  echo "#====================================================================#";
+  echo "|====================================================================|";
+  echo "|                                                                    |";
+  echo "| ${BOLD}UPDATER DOCUMENTATION${NORM}                                " \
+        "             |";
+  echo "|                                                                    |";
+  echo "|====================================================================|";
 
   # Usage
   usage_full "NOEXIT";
 
+  # Page break
+  read -p "(Press ${BOLD}<Enter>${NORM} for next page)";
+
+  # Formatting
+  echo "";
+
   # Functions reference
   functions_reference;
+
+  # Formatting
+  echo "";
+
+  # Page break
+  read -p "(Press ${BOLD}<Enter>${NORM} for next page)";
 
   # Formatting
   echo "";
@@ -573,27 +587,27 @@ function calc_runtime
   # Uses 
   #   start_time_epoch
   #   end_time_epoch
+  #   run_time_epoch
+  #   run_time_pretty
 
   # [debug] Function start
   if [[ $debug4 == true ]];
   then
-    echo "[DEBUG][CALC_RUNTIME][${BOLD_GREEN}INFO${NORM}] Entering 'calc_runtime' function";
+    echo "[DEBUG][CALC_RUNTIME][${BOLD_GREEN}INFO${NORM}]" \
+          "Entering 'calc_runtime' function";
   fi
 
-  # Local Variables
-  local RUNTIME_EPOCH="";
-  local RUNTIME_PRETTYTIME="";
-
   # Calculate and print run-time of script
-  RUNTIME_EPOCH=`expr $end_time_epoch - $start_time_epoch`;
-  RUNTIME_PRETTYTIME=`date --date="@$RUNTIME_EPOCH" +"%_M minute(s), and %_S seconds"`;
+  run_time_epoch=$(expr $end_time_epoch - $start_time_epoch);
+  run_time_pretty=$(date --date="@$run_time_epoch" +"%_M minute(s), and %_S seconds.");
  
-  echo "$RUNTIME_PRETTYTIME";
+  echo "$run_time_pretty";
 
   # [debug] Function end
   if [[ $debug4 == true ]];
   then
-    echo "[DEBUG][CALC_RUNTIME][${BOLD_GREEN}INFO${NORM}] Leaving 'calc_runtime' function";
+    echo "[DEBUG][CALC_RUNTIME][${BOLD_GREEN}INFO${NORM}]" \
+          "Leaving 'calc_runtime' function";
   fi
 }
 
@@ -609,7 +623,7 @@ function calc_runtime
 # - Log message
 # - Exit code
 # OUTPUT:
-# - Update, debug, stop, start, or fail logging messages
+# - Update, debug{1-4}, stop, start, or fail logging messages
 # NOTES:
 # - Should exit with code 98 for invalid number of arguments
 # - Should exit with code 97 for bad log type
@@ -625,7 +639,8 @@ function brainbox_logger()
   # [debug] Function start
   #if [[ $debug4 == true ]];
   #then
-  #  echo "[DEBUG][BRAINBOX_LOGGER][${BOLD_GREEN}INFO${NORM}] Entering 'brainbox_logger' function";
+  #  echo "[DEBUG][BRAINBOX_LOGGER][${BOLD_GREEN}INFO${NORM}]" \
+  #         "Entering 'brainbox_logger' function";
   #fi
 
   # Format
@@ -634,34 +649,35 @@ function brainbox_logger()
   # Variables
   # NUM_ARGS: Controls number of arguments to the logger
   local -r NUM_ARGS=3;
-  # L_TYPE_ARRAY: Controls log types. Updates to array must be reflected in logger case statement
-  local -r L_TYPE_ARRAY=("update" "debug" "fail" "start" "stop" "syslog");
+  # L_TYPE_ARRAY: Controls log types. Updates to array must be reflected 
+  #   in logger case statement
+  local -r L_TYPE_ARRAY=("update" "debug1" "debug2" "debug3" "debug4" "fail" "start" "stop" "syslog");
+  local -r LOG_TAG="[DEBUG][BRAINBOX_LOGGER]";
+
   # l_type, l_msg, l_xcode: Define order of logger options
   local l_type;
-  l_type="$1" || return;
   local l_msg;
-  l_msg="$2" || return;
   local l_xcode;
+  local logger_found_match;
+
+  l_type="$1" || return;
+  l_msg="$2" || return;
   l_xcode="$3" || return;
-  local logger_found_match=false;
-  local fail_time_epoch="";
-  local fail_time_pretty="";
-  #  local start_time_epoch=""; MUST BE GLOBAL
-  local start_time_pretty="";
-  #  local end_time_epoch=""; MUST BE GLOBAL
-  local end_time_pretty="";
+  logger_found_match=false;
 
   if [[ $debug4 == true ]];
   then
-    logger "[DEBUG][BRAINBOX_LOGGER][INFO] Logger received: Messsage type=$l_type, Message=$l_msg, Exit code=$l_xcode";
-    #echo "[DEBUG][BRAINBOX_LOGGER][${BOLD_GREEN}INFO${NORM}] Logger received: Message type=$l_type, Message=$l_msg, Exit code=$l_xcode";
+    logger "$LOG_TAG[INFO] Logger received: Messsage type=$l_type, Message=$l_msg, Exit code=$l_xcode";
+    echo "$LOG_TAG[${BOLD_GREEN}INFO${NORM}] received: Message type=$l_type, Message=$l_msg, Exit code=$l_xcode";
   fi
 
   if [[ "${#@}" -gt "$NUM_ARGS" || "${#@}" -lt "$NUM_ARGS" ]];
   then
     # Argument count is an unexpected value
-    logger "[DEBUG][BRAINBOX_LOGGER][FATAL] $ Updater FAILED due to an internal error: \"Invalid number of arguments for the logger\" (98)";
-    echo -e "\n[DEBUG][BRAINBOX_LOGGER][BUG][${BOLD_BG_RED}FATAL${NORM}] $os_nickname Updater ${BOLD_BG_RED}FAILED${NORM} due to an internal error: \"Invalid number of arguments for the logger\" (98)";
+    logger "$LOG_TAG[BUG][FATAL] $updater_nickname Updater FAILED due to an internal error: \"Invalid number of arguments for the logger\" (98)";
+    echo -e "\n$LOG_TAG[BUG][${BOLD_BG_RED}FATAL${NORM}]" \
+            "$updater_nickname Updater ${BOLD_BG_RED}FAILED${NORM} due to an" \
+            "internal error: \"Invalid number of arguments for the logger\" (98)";
 
     if [[ $gui == true ]];
     then
@@ -670,7 +686,7 @@ function brainbox_logger()
 
       if [[ $debug4 == true ]];
       then
-        logger "[DEBUG][BRAINBOX_LOGGER][GUI][INFO] Notify-send called for updater failure (98)";
+        logger "$LOG_TAG[GUI][INFO] Notify-send called for updater failure (98)";
       fi
     fi
 
@@ -689,10 +705,10 @@ function brainbox_logger()
         #   isn't checked.
         if [[ $debug4 == true ]];
         then
-          logger "[DEBUG][BRAINBOX_LOGGER][INFO] Log type is valid, continuing...";
-          echo "[DEBUG][BRAINBOX_LOGGER][${BOLD_GREEN}INFO${NORM}] Log type is valid, continuing...";
+          logger "$LOG_TAG[INFO] Log type is valid, continuing...";
+          echo "$LOG_TAG[${BOLD_GREEN}INFO${NORM}] Log type is valid, continuing...";
         else
-          logger "[DEBUG][BRAINBOX_LOGGER][INFO] Log type is valid, continuing...";
+          logger "$LOG_TAG[INFO] Log type is valid, continuing...";
         fi
         logger_found_match=true;
 
@@ -702,11 +718,12 @@ function brainbox_logger()
           if [[ $debug4 == true ]];
           then
             # Output to syslog and console
-            logger "[DEBUG][BRAINBOX_LOGGER][INFO] Exit code, args, and log type are all valid, continuing...";
-            echo "[DEBUG][BRAINBOX_LOGGER][${BOLD_GREEN}INFO${NORM}] Exit code, args, and log type are all valid, continuing...";
+            logger "$LOG_TAG[INFO] Exit code, args, and log type are all valid, continuing...";
+            echo "$LOG_TAG[${BOLD_GREEN}INFO${NORM}]" \
+                  "Exit code, args, and log type are all valid, continuing...";
           else
             # Only output to syslog
-            logger "[DEBUG][BRAINBOX_LOGGER][INFO] Exit code, args, and log type are all valid, continuing...";
+            logger "$LOG_TAG[INFO] Exit code, args, and log type are all valid, continuing...";
           fi
 
           case "$l_type" in
@@ -719,24 +736,75 @@ function brainbox_logger()
               # - Log message to log
               ##############################################################################
               # Special line start due to being mostly end-user facing
-              logger "[UPDATER] $l_msg";
-              echo "[UPDATER] $l_msg";
+              logger "UPDATER :: $l_msg";
+              echo "UPDATER :: $l_msg";
             ;;
-            "debug")
+            "debug1")
               ##############################################################################
-              # NAME: debug
+              # NAME: debug1
               # PURPOSE:  Send message from the script to the logger and to the 
               #           console if debugging is turned on
               # OUTPUT: 
-              # - Log message to console if debugging is enabled
+              # - Log message to console if $debug1 is enabled
+              # - Log message to log
+              ##############################################################################
+              if [[ $debug1 == true ]];
+              then
+                logger "$LOG_TAG[INFO] $l_msg";
+                echo "$LOG_TAG[${BOLD_GREEN}INFO${NORM}] $l_msg";
+              else
+                logger "$LOG_TAG[INFO] $l_msg";
+              fi
+            ;;
+            "debug2")
+              ##############################################################################
+              # NAME: debug2
+              # PURPOSE:  Send message from the script to the logger and to the 
+              #           console if debugging is turned on
+              # OUTPUT: 
+              # - Log message to console if $debug2 is enabled
+              # - Log message to log
+              ##############################################################################
+              if [[ $debug2 == true ]];
+              then
+                logger "$LOG_TAG[INFO] $l_msg";
+                echo "$LOG_TAG[${BOLD_GREEN}INFO${NORM}] $l_msg";
+              else
+                logger "$LOG_TAG[INFO] $l_msg";
+              fi
+            ;;
+            "debug3")
+              ##############################################################################
+              # NAME: debug3
+              # PURPOSE:  Send message from the script to the logger and to the 
+              #           console if debugging is turned on
+              # OUTPUT: 
+              # - Log message to console if $debug3 is enabled
+              # - Log message to log
+              ##############################################################################
+              if [[ $debug3 == true ]];
+              then
+                logger "$LOG_TAG[INFO] $l_msg";
+                echo "$LOG_TAG[${BOLD_GREEN}INFO${NORM}] $l_msg";
+              else
+                logger "$LOG_TAG[INFO] $l_msg";
+              fi
+            ;;
+            "debug4")
+              ##############################################################################
+              # NAME: debug4
+              # PURPOSE:  Send message from the script to the logger and to the 
+              #           console if debugging is turned on
+              # OUTPUT: 
+              # - Log message to console if $debug4 is enabled
               # - Log message to log
               ##############################################################################
               if [[ $debug4 == true ]];
               then
-                logger "[DEBUG][BRAINBOX_LOGGER][INFO] $l_msg";
-                echo "[DEBUG][BRAINBOX_LOGGER][${BOLD_GREEN}INFO${NORM}] $l_msg";
+                logger "$LOG_TAG[INFO] $l_msg";
+                echo "$LOG_TAG[${BOLD_GREEN}INFO${NORM}] $l_msg";
               else
-                logger "[DEBUG][BRAINBOX_LOGGER][INFO] $l_msg";
+                logger "$LOG_TAG[INFO] $l_msg";
               fi
             ;;
             "fail")
@@ -750,8 +818,8 @@ function brainbox_logger()
               fail_time_epoch=`date +%s`;
               fail_time_pretty=`date --date="@$fail_time_epoch" +"%D %T %Z"`;
 
-              logger "[FATAL] $os_nickname Updater FAILED at $fail_time_pretty due to \"$l_msg\" with exit code $l_xcode!";
-              echo -e "\n[${BOLD_BG_RED}FATAL${NORM}] $os_nickname Updater ${BOLD_BG_RED}FAILED${NORM} at $fail_time_pretty due to \"$l_msg\" with exit code $l_xcode!";
+              logger "[FATAL] $updater_nickname Updater FAILED at $fail_time_pretty due to \"$l_msg\" with exit code $l_xcode!";
+              echo -e "\n${BOLD_BG_RED}FATAL${NORM} $updater_nickname Updater ${BOLD_BG_RED}FAILED${NORM} at $fail_time_pretty due to \"$l_msg\" with exit code $l_xcode!";
 
               if [[ $gui == true ]];
               then
@@ -760,9 +828,10 @@ function brainbox_logger()
 
                 if [[ $debug4 == true ]];
                 then
-                  echo "[DEBUG][BRAINBOX_LOGGER][GUI][${BOLD_GREEN}INFO${NORM}] Notify-send called for updater failure (generic)";
+                  echo "$LOG_TAG[GUI][${BOLD_GREEN}INFO${NORM}]" \
+                        "Notify-send called for updater failure (generic)";
                 else
-                  logger "[DEBUG][BRAINBOX_LOGGER][GUI][INFO] Notify-send called for updater failure (generic)";
+                  logger "$LOG_TAG[GUI][INFO] Notify-send called for updater failure (generic)";
                 fi
               fi
             ;;
@@ -777,8 +846,9 @@ function brainbox_logger()
               ##############################################################################
               start_time_epoch=`date +%s`;
               start_time_pretty=`date --date="@$start_time_epoch" +"%D %T %Z"`;
-              logger "[UPDATER STARTED] $os_nickname Updater started at $start_time_pretty.";
-              echo "[${BOLD_GREEN}UPDATER STARTED${NORM}] $os_nickname Updater started at $start_time_pretty.";
+
+              logger "UPDATER STARTED :: $updater_nickname Updater started at $start_time_pretty.";
+              echo "${BOLD_GREEN}UPDATER STARTED${NORM} :: $updater_nickname Updater started at $start_time_pretty.";
               echo "";
 
               if [[ $gui == true ]];
@@ -788,9 +858,10 @@ function brainbox_logger()
 
                 if [[ $debug4 == true ]];
                 then
-                  echo "[DEBUG][BRAINBOX_LOGGER][GUI][${BOLD_GREEN}INFO${NORM}] Notify-send called for updater start";
+                  echo "$LOG_TAG[GUI][${BOLD_GREEN}INFO${NORM}]" \
+                        "Notify-send called for updater start";
                 else
-                  logger "[DEBUG][BRAINBOX_LOGGER][GUI][INFO] Notify-send called for updater start";
+                  logger "$LOG_TAG[GUI][INFO] Notify-send called for updater start";
                 fi
               fi
             ;;
@@ -804,17 +875,20 @@ function brainbox_logger()
               ##############################################################################
               end_time_epoch=`date +%s`;
               end_time_pretty=`date --date="@$end_time_epoch" +"%D %T %Z"`;
+
               if [[ $debug4 == true ]];
               then
                 # Execute calc_runtime on its own line with debug4 so the internal messages don't overwhelm the output
-                logger "[UPDATER FINISHED] $os_nickname Updater completed at $end_time_pretty with exit code $l_xcode.";
-                logger "[UPDATER FINISHED] Updater runtime was" `calc_runtime`;
+                logger "UPDATER COMPLETED :: $updater_nickname Updater completed at $end_time_pretty with exit code $l_xcode. Run time was" $(calc_runtime);
 
-                echo -e "\n[${BOLD_GREEN}UPDATER FINISHED${NORM}] $os_nickname Updater completed at $end_time_pretty with exit code $l_xcode.";
-                echo "[${BOLD_GREEN}UPDATER FINISHED${NORM}] Updater runtime was" `calc_runtime`;
+                echo -e "\n${BOLD_GREEN}UPDATER COMPLETED${NORM} ::" \
+                        "$updater_nickname Updater completed at $end_time_pretty with exit" \
+                        "code $l_xcode. Run time was" $(calc_runtime);
               else
-                logger "[UPDATER FINISHED] $os_nickname Updater completed at $end_time_pretty, after running for `calc_runtime`, with exit code $l_xcode.";
-                echo -e "\n[${BOLD_GREEN}UPDATER FINISHED${NORM}] $os_nickname Updater completed at $end_time_pretty, after running for `calc_runtime`, with exit code $l_xcode.";
+                logger "UPDATER COMPLETED $updater_nickname Updater completed at $end_time_pretty, after running for $(calc_runtime), with exit code $l_xcode.";
+                echo -e "\n${BOLD_GREEN}UPDATER COMPLETED${NORM} ::" \
+                        "$updater_nickname Updater completed at $end_time_pretty" \
+                        "with exit code $l_xcode. Run time was" $(calc_runtime);
               fi
 
               if [[ $gui == true ]];
@@ -824,9 +898,9 @@ function brainbox_logger()
 
                 if [[ $debug4 == true ]];
                 then
-                  echo "[DEBUG][BRAINBOX_LOGGER][GUI][${BOLD_GREEN}INFO${NORM}] Notify-send called for updater stop";
+                  echo "$LOG_TAG[GUI][${BOLD_GREEN}INFO${NORM}] Notify-send called for updater stop";
                 else
-                  logger "[DEBUG][BRAINBOX_LOGGER][GUI][INFO] Notify-send called for updater stop";
+                  logger "$LOG_TAG[GUI][INFO] Notify-send called for updater stop";
                 fi
               fi
             ;;
@@ -837,7 +911,7 @@ function brainbox_logger()
               # OUTPUT: 
               # - Log message to syslog
               ##############################################################################
-              logger "[DEBUG][BRAINBOX_LOGGER][SYSLOG][INFO] $l_msg";
+              logger "$LOG_TAG[SYSLOG][INFO] $l_msg";
             ;;
             *)
               # Call the failwhale: This should never be reached
@@ -845,9 +919,10 @@ function brainbox_logger()
             ;;
           esac
         else
-          logger "[UPDATER BUG][FATAL] $os_nickname Updater failed due to an internal error: \"Exit code is not a number\" (96)";
-          echo "";
-          echo -e "[UPDATER BUG][${BOLD_BG_RED}FATAL${NORM}] $os_nickname Updater \E[31mfailed\E[00m due to an internal error: \"Exit code is not a number\" (96)";
+          logger "[UPDATER BUG][FATAL] $updater_nickname Updater failed due to an internal error: \"Exit code is not a number\" (96)";
+          echo -e "\n[UPDATER BUG][${BOLD_BG_RED}FATAL${NORM}] $updater_nickname" \
+                  "Updater ${BOLD_RED}failed${NORM} due to an internal" \
+                  "error: \"Exit code is not a number\" (96)";
 
           if [[ $gui == true ]];
           then
@@ -856,9 +931,9 @@ function brainbox_logger()
 
             if [[ $debug4 == true ]];
             then
-              echo "[DEBUG][BRAINBOX_LOGGER][GUI][${BOLD_GREEN}INFO${NORM}] Notify-send called for updater failure (96)";
+              echo "$LOG_TAG[GUI][${BOLD_GREEN}INFO${NORM}] Notify-send called for updater failure (96)";
             else
-              logger "[DEBUG][BRAINBOX_LOGGER][GUI][INFO] Notify-send called for updater failure (96)";
+              logger "$LOG_TAG[GUI][INFO] Notify-send called for updater failure (96)";
             fi
           fi
 
@@ -874,9 +949,10 @@ function brainbox_logger()
     #   debugging tool.
     if [[ ! $logger_found_match ]];
     then
-      logger "[UPDATER BUG][FATAL] $os_nickname Updater failed due to an internal error: \"Invalid log type\" (97)";
-      echo "";
-      echo -e "[UPDATER BUG][${BOLD_BG_RED}FATAL${NORM}] $os_nickname Updater ${BOLD}failed${NORM} due to an internal error: \"Invalid log type\" (97)";
+      logger "[UPDATER BUG][FATAL] $updater_nickname Updater failed due to an internal error: \"Invalid log type\" (97)";
+      echo -e "\n[UPDATER BUG][${BOLD_BG_RED}FATAL${NORM}] $updater_nickname" \
+              "Updater ${BOLD}failed${NORM} due to an internal error:" \
+              "\"Invalid log type\" (97)";
 
       if [[ $gui == true ]];
       then
@@ -897,7 +973,8 @@ function brainbox_logger()
   # [debug] Function end
   #if [[ $debug4 == true ]];
   #then
-  #  echo "[DEBUG][BRAINBOX_LOGGER][${BOLD_GREEN}INFO${NORM}] Leaving 'brainbox_logger' function";
+  #  echo "$LOG_TAG[${BOLD_GREEN}INFO${NORM}] Leaving 'brainbox_logger'" \
+  #        "function";
   #fi
 }
 
@@ -917,33 +994,23 @@ function brainbox_logger()
 ##############################################################################
 function check_logs_dir()
 {
-  # Log path = $logpath (/tmp by default)
-  # Default log = $dlogpath (/tmp)
-  # Backup log path = $blogpath (~/)
+  # Log path = $log_path (/tmp by default)
+  # Default log = $default_log_path (/tmp)
+  # Backup log path = $backup_log_path (~/)
 
-  if [[ -w $dlogpath ]]
-  then
+  if [[ -w $default_log_path ]]; then
     # Logging to /tmp
-    logpath=$dlogpath;
+    log_path=$default_log_path;
 
-    if [[ $keeplogs == true && $debug2 == true ]]
-    then
-      brainbox_logger "update" "Logs will be temporarily stored in $LOGPATH." "0";
-    elif [[ $keeplogs == true && $debug2 == false ]]
-    then
-      brainbox_logger "syslog" "Logs will be temporarily stored in $LOGPATH." "0";
+    if [[ $keeplogs == true ]]; then
+      brainbox_logger "debug2" "Logs currently stored in $log_path." "0";
     fi
-  elif [[ -w $blogpath ]]
-  then
+  elif [[ -w $backup_log_path ]]; then
     # Logging to ~/
-    logpath=$blogpath;
+    log_path=$backup_log_path;
 
-    if [[ $keeplogs == true && $debug2 == true ]]
-    then
-      brainbox_logger "update" "Logs will be stored in $LOGPATH." "0";
-    elif [[ $keeplogs == true && $debug2 == false ]]
-    then
-      brainbox_logger "syslog" "Logs will be stored in $LOGPATH." "0";
+    if [[ $keeplogs == true ]]; then
+      brainbox_logger "debug2" "Logs currently stored in $log_path." "0";
     fi
   else
     # /tmp and ~/ aren't writable?! ... bail out!
@@ -967,78 +1034,40 @@ function check_logs_dir()
 ##############################################################################
 function cleanup_logs()
 {
-  # Update log: updater-update-log.txt
-  # Upgrade log: updater-upgrade-log.txt
-
-  if [[ $keeplogs == true ]]
-  then
-    if [[ $debug1 == true ]]
-    then
-      # Display log status if debugging
-      brainbox_logger "debug" "Moving logs from $logpath to ~/" "0";
-    else
-      # Else, only update to the system log
-      brainbox_logger "syslog" "Moving logs from $logpath to ~/" "0";
-    fi
+  if [[ $keeplogs == true ]]; then
+    # Display log status... console if $debug3
+    brainbox_logger "debug3" "Moving logs from $log_path to ~/" "0";
+    # ... syslog everytime
+    brainbox_logger "syslog" "Moving logs from $log_path to ~/" "0";
     
     # Move logs from /tmp to ~/
-    if [[ -e $logpath/$update_log ]]
-    then
-      mv $logpath/$update_log ~/;
-    fi
-
-    if [[ -e $logpath/$upgrade_log ]]
-    then
-      mv $logpath/$upgrade_log ~/;
+    if [[ -e $log_path/$updater_log ]]; then
+      mv $log_path/$updater_log ~/;
     fi
 
     # Change ownership
-    if [[ $debug1 == true ]]
-    then
-      # Display log ownership status only if debugging
-      brainbox_logger "debug" "Changing log file ownership." "0";
-    else
-      # Else, only output to system log
-      brainbox_logger "syslog" "Changing log file ownership." "0";
-    fi
+    # Display log ownership status... console if $debug4
+    brainbox_logger "debug4" "Changing log file ownership." "0";
+    # ... syslog everytime
+    brainbox_logger "syslog" "Changing log file ownership." "0";
     UGROUP=`cat /etc/group | grep $SUDO_UID | cut -d ":" -f1`;
 
-    if [[ -w ~/$update_log && -w ~/$upgrade_log ]]
-    then
-      chown $SUDO_USER:$UGROUP ~/$update_log;
-      chown $SUDO_USER:$UGROUP ~/$upgrade_log;
-    elif [[ -w ~/$update_log ]]
-    then
-      chown $SUDO_USER:$UGROUP ~/$update_log;
-    elif [[ -w ~/$upgrade_log ]]
-    then
-      chown $SUDO_USER:$UGROUP ~/$upgrade_log;
+    if [[ -w ~/$updater_log ]]; then
+      chown $SUDO_USER:$UGROUP ~/$updater_log;
     else
       updater_exit=9;
       brainbox_logger "fail" "File ownership modification failed." "$updater_exit";
     fi
-
   else
     # Delete logs in /tmp
-    if [[ $debug1 == true ]]
-    then
-      # Display log status if debugging
-      brainbox_logger "debug" "Deleting logs" "0";
-    else
-      # Else, only output to system log
-      brainbox_logger "syslog" "Deleting logs" "0";
-    fi
+    # Display log deletion messages... console if $debug3
+    brainbox_logger "debug3" "Deleting logs" "0";
+    # ... syslog everytime
+    brainbox_logger "syslog" "Deleting logs" "0";
 
-    if [[ -e $logpath/$update_log ]]
-    then
-      rm $logpath/$update_log;
+    if [[ -e $log_path/$updater_log ]]; then
+      rm $log_path/$updater_log;
     fi
-
-    if [[ -e $logpath/$upgrade_log ]]
-    then
-      rm $logpath/$upgrade_log;
-    fi
-
   fi
 }
 
@@ -1060,7 +1089,7 @@ function usage_short()
   updater_exit=$1
 
   # Usage statement
-  echo -en "\n${BOLD}USAGE :: sudo $0${NORM} [-v|vv|vvv|vvvv] [options]\r\n
+  echo -en "\n${BOLD}USAGE :: sudo $SCRIPT_NAME_FULL_SHORT${NORM} [-v|vv|vvv|vvvv] [options]\r\n
   -updateonly             :   Update ONLY\r
   -upgradeonly            :   Upgrade ONLY\r
   -t [testonly]           :   Test mode (no changes)(apt-get -s)\r
@@ -1075,8 +1104,12 @@ function usage_short()
 
   Script Help
     -h [help | ?]       :   Display [short] script help (this menu)\r
-    -helpfull           :   Display [full] script help\r
+    -helpfull           :   Display [full] script help\n\n";
 
+# Page break
+read -p "(Press ${BOLD}<Enter>${NORM} for next page)";
+
+echo -en "
   Debug/Verbose Mode (${BOLD}Must be first argument${NORM})\r
     -v     : Minimal verbosity/debug information\r
     -vv    : More verbose/some internal debug information\r
@@ -1116,7 +1149,7 @@ function usage_full()
   updater_exit=$1
 
   # Usage statement
-  echo -en "\n${BOLD}USAGE :: sudo $0${NORM} [-v|vv|vvv|vvvv] [options]\r\n
+  echo -en "\n${BOLD}USAGE :: sudo $SCRIPT_NAME_FULL_SHORT${NORM} [-v|vv|vvv|vvvv] [options]\r\n
   -updateonly             :   Update ONLY\r
   -upgradeonly            :   Upgrade ONLY\r
   -t [testonly]           :   Test mode (no changes)(apt-get -s)\r
@@ -1131,8 +1164,12 @@ function usage_full()
 
   Script Help
     -h [help | ?]       :   Display [short] script help\r
-    -helpfull           :   Display [full] script help (this menu)\r
+    -helpfull           :   Display [full] script help (this menu)\n\n";
 
+# Page break
+read -p "(Press ${BOLD}<Enter>${NORM} for next page)";
+
+echo -en "
   Debug/Verbose Mode (${BOLD}Must be first argument${NORM})\r
     -v     : Minimal verbosity/debug information\r
     -vv    : More verbose/some internal debug information\r
@@ -1145,6 +1182,18 @@ function usage_full()
     -debug-forcefail    :   Force failure for debugging\r
     -docs               :   Show all available documentation\r
 
+  Log types\r
+    update              :   Normal updates; console and syslog\r
+    debug               :   Normal updates; syslog, console if verbose\r
+    fail                :   Log failures; console and syslog\r
+    start               :   Log script start; console and syslog\r
+    stop                :   Log script stop; console and syslog\r
+    syslog              :   Log ONLY to syslog\n\n";
+
+# Page break
+read -p "(Press ${BOLD}<Enter>${NORM} for next page)";
+
+echo -en " 
   Output conventions\r
     [${BOLD_GREEN}INFO${NORM}]  General debugging information.
     [${BOLD_YELLOW}WARN${NORM}]  Mostly non-fatal errors, like conflicts \r
@@ -1152,12 +1201,8 @@ function usage_full()
             may not exit.\r
     [${BOLD_RED}ERROR${NORM}] Major errors. Script will exit (with limited\r
             exceptions). Syntax errors fall into this category.\r
-    [${BOLD_BG_RED}FATAL${NORM}] Fatal errors. Script will exit (no exceptions).\n\n";
+    [${BOLD_BG_RED}FATAL${NORM}] Fatal errors. Script will exit (no exceptions).\r
 
-# Page break
-read -p "(${BOLD}Press <Enter> for next page${NORM})";
-
-echo -en "
   ${BOLD}sudo${NORM} requirement\r
     To help minimize security issues related to elevated permissions, this\r
     script must be executed with ${BOLD}sudo${NORM}; SUID and SGID must never be used.\r
@@ -1174,8 +1219,7 @@ echo -en "
 
   # Check for "NOEXIT" being passed to usage function
   # Used only by "docs" function to prevent script termination
-  if [[ $1 != "NOEXIT" ]];
-  then
+  if [[ $1 != "NOEXIT" ]]; then
     # Exit
     exit $updater_exit;
   #else
@@ -1199,16 +1243,10 @@ echo -en "
 function find_apt()
 {
   # Find apt-get and verify it's executable
-  if [[ -x `which apt-get` ]]
-  then
+  if [[ -x $(which apt-get) ]]; then
     aptcmd=`which apt-get`;
 
-    if [[ $debug1 == true ]];
-    then
-      brainbox_logger "update" "Apt-get found at $aptcmd, continuing..." "0"; 
-    else
-      brainbox_logger "debug" "Apt-get found at $aptcmd, continuing..." "0";
-    fi
+    brainbox_logger "debug2" "Apt-get found at $aptcmd, continuing..." "0";
   else
     # Set exit code
     updater_exit=5;
@@ -1237,8 +1275,7 @@ function find_apt()
 function force_fail()
 {
   # Force failure
-  if [[ -e $(dirname $0)/brainbox-failwhale.sh ]];
-  then
+  if [[ -e $(dirname $0)/brainbox-failwhale.sh ]]; then
     # Call the failwhale
     $(dirname $0)/brainbox-failwhale.sh;
 
@@ -1284,17 +1321,13 @@ function check_notify()
 {
   # notify-send is provided by notify-osd package
   
-  if [[ -x `which notify-send` ]]
-  then
+  if [[ -x $(which notify-send) ]]; then
     notify_send_cmd=`which notify-send`;
 
     # Notify-send was found,
     gui=true;
 
-    if [[ $debug1 == true ]]
-    then
-      brainbox_logger "debug" "Notify-send found at $notify_send_cmd, continuing..." "0";
-    fi
+    brainbox_logger "debug4" "Notify-send found at $notify_send_cmd, continuing..." "0";
   else
     # Set exit code
     updater_exit=12;
@@ -1326,9 +1359,8 @@ function check_force()
 {
   CHOICE="";
 
-  if [[ $force == true && `echo $aptopts | grep -o '\--force-yes'` == "--force-yes" ]]
-  then
-    brainbox_logger "debug" "--force-yes was found in options. Check forced to ensure it was intended." "0";
+  if [[ $force == true && `echo $aptopts | grep -o '\--force-yes'` == "--force-yes" ]]; then
+    brainbox_logger "debug3" "--force-yes was found in options. Check forced to ensure it was intended." "0";
 
     echo -n "[${BOLD_YELLOW}WARN${NORM}] ${BOLD_RED}You've chosen to use \"--force-yes\" which can be destructive. Do you wish to continue [yes/NO]? ${NORM}";
     read -t 30 CHOICE;
@@ -1383,52 +1415,37 @@ function apt_update()
   # Apt-get Update
   brainbox_logger "update" "Starting APT acquire" "0";
 
-  if [[ $debug1 == true ]];
-  then
+  if [[ $debug1 == true ]]; then
     aptopts=${aptopts//-q/};
-  fi
-
-  # Clear current logs in /tmp
-  if [[ -e $logpath/$update_log ]]
-  then
-    rm $logpath/$update_log;
   fi
 
   # Run `apt-get update`
   # Output to log and console if verbose, log only otherwise
-  if [[ $debug1 == true ]]
-  then
-    $aptcmd update | while read line;
-    do
+  if [[ $debug1 == true ]]; then
+    $aptcmd update | while read line; do
       # Send to syslog
-      logger "[UPDATER] $line";
+      logger "UPDATER :: $line";
 
-      # Send to console and update_log
-      echo "[UPDATER] $line" | tee -a $logpath/$update_log;
+      # Send to console and updater_log
+      echo "UPDATER :: $line" | tee -a $log_path/$updater_log;
     done
 
     # Apt-get update logging
-    brainbox_logger "update" "APT acquire is complete" "0";
+#    brainbox_logger "update" "APT acquire is complete" "0";
   else
-    $aptcmd update -q | while read line;
-    do
+    $aptcmd update -q | while read line; do
       # Send to syslog
-      logger "[UPDATER] $line";
+      logger "UPDATER :: $line";
 
-      # Send to update_log only
-      echo "[UPDATER] $line" >> $logpath/$update_log;
+      # Send to updater_log only
+      echo "UPDATER :: $line" >> $log_path/$updater_log;
     done
   fi
 
   # CATCH UPDATER SUCCESS/FAILURE
-  if [[ $? -eq 0 ]]
-  then
-    if [[ $debug1 == true ]]
-    then
-      brainbox_logger "debug" "APT acquire ($aptcmd) is complete" "0";
-    else
-      brainbox_logger "update" "APT acquire is complete" "0";
-    fi
+  if [[ $? -eq 0 ]]; then
+    brainbox_logger "debug3" "APT acquire ($aptcmd) is complete" "0";
+    brainbox_logger "update" "APT acquire is complete" "0";
 
     # Return to main (should hit apt_upgrade() next)
   else
@@ -1460,15 +1477,8 @@ function apt_upgrade()
   # Status message
   brainbox_logger "update" "Starting APT install. This may take some time..." "0";
 
-  if [[ $debug1 == true ]];
-  then
+  if [[ $debug1 == true ]]; then
     aptopts=${aptopts//-q/};
-  fi
-
-  # Clear current logs in /tmp
-  if [[ -e $logpath/$upgrade_log ]]
-  then
-    rm $logpath/$upgrade_log;
   fi
 
   # Blank line for console formatting
@@ -1478,18 +1488,14 @@ function apt_upgrade()
   # The output of `dist-upgrade` is important, don't bother trying to be quiet
   # -q flag not needed as it is not included in the aptopts variable
   $aptcmd dist-upgrade $aptopts | \
-  tee -a $logpath/$upgrade_log
+  tee -a $log_path/$updater_log
 
   # CATCH UPDATER SUCCESS/FAILURE
-  if [[ $? -eq 0 ]]
-  then
+  if [[ $? -eq 0 ]]; then
     # Apt-get dist-upgrade has succeeded
-    if [[ $debug1 == true ]]
-    then
-      brainbox_logger "debug" "APT install ($aptcmd) is complete" "0";
-    else
-      brainbox_logger "update" "APT install is complete" "0";
-    fi
+    brainbox_logger "debug3" "APT install ($aptcmd) is complete" "0";
+    brainbox_logger "update" "APT install is complete" "0";
+
   # Return to main (should cleanup logs next)
   else
     # Set update exit code to 3 (apt-get upgrade failure)
@@ -1531,35 +1537,33 @@ function apt_upgrade()
 # if [[ "$l_xcode" =~ ^-?[0-9]+$ ]];
 
 # Parse arguments if > 0, otherwise exit
-if [[ $# -ge 0 && "$(whoami)" == "root" ]]
-then
+if [[ $# -ge 0 && "$(whoami)" == "root" ]]; then
   # Used to reference original set of arguments
   allargs="$@";
 
   # Check for verbose flag as first argument ($1)
   # if-statement requires obvious intent through syntax matching
-  if [[ "$1" =~ "-v" ]];
-  then 
+  if [[ "$1" =~ "v" ]]; then
     case "$1" in
-      -v)  
+      -v|--v)  
         # Verbosity/debug 1
         # No console confirmation for debug level 1
         debug1=true;
       ;;   
-      -vv) 
+      -vv|--vv)
         # Verbosity/debug 2
         # No console confirmation for debug level 2
         debug1=true;
         debug2=true;
       ;;   
-      -vvv)
+      -vvv|--vvv)
         # Verbosity/debug 3
         echo -e "\n[DEBUG][MAIN][${BOLD_YELLOW}WARN${NORM}] Debug level 3 enabled\n";
         debug1=true;
         debug2=true;
         debug3=true;
       ;;   
-      -vvvv)
+      -vvvv|--vvvv)
         # Verbosity/debug 4
         echo -e "\n[DEBUG][MAIN][${BOLD_YELLOW}WARN${NORM}] Debug level 4 enabled\n";
         debug1=true;
@@ -1583,7 +1587,7 @@ then
       updater_exit=1;
 
       # Send update to syslog
-      brainbox_logger "syslog" "$os_nickname Updater called with HELP flag. Showing usage and exiting." "$updater_exit";
+      brainbox_logger "syslog" "$updater_nickname Updater called with HELP flag. Showing usage and exiting." "$updater_exit";
 
       # Help key, show usage and exit 1
       usage_short $updater_exit;
@@ -1593,7 +1597,7 @@ then
       updater_exit=1;
 
       # Send update to syslog
-      brainbox_logger "syslog" "$os_nickname Updater called with HELP flag. Showing usage and exiting." "$updater_exit";
+      brainbox_logger "syslog" "$updater_nickname Updater called with HELP flag. Showing usage and exiting." "$updater_exit";
 
       # Help key, show usage and exit 1
       usage_full $updater_exit;
@@ -1635,7 +1639,7 @@ then
     case $OPT in
       --updatername=* | -updatername=*)
         # Parse "updatername" flag for new updater nickname
-        os_nickname=${OPT##*updatername=};
+        updater_nickname=${OPT##*updatername=};
         ;;
       --gui | -gui | -g | --g)
         trygui=true;
@@ -1692,7 +1696,7 @@ else
   updater_exit=4;
 
   # Send update to syslog
-  brainbox_logger "syslog" "$os_nickname Updater requires root privileges. Try running updater with \`sudo\`" "$updater_exit";
+  brainbox_logger "syslog" "$updater_nickname Updater requires root privileges. Try running updater with \`sudo\`" "$updater_exit";
 
   # Set exit code to 4 and call usage function. See documentation for more exit codes.
   usage_short $updater_exit;
@@ -1709,23 +1713,20 @@ fi
 # OUTPUT: 
 # - Flags status
 ##############################################################################
-if [[ $debug4 == true ]]
-then
-  brainbox_logger "debug" "Arguments: $allargs" "0";
-  brainbox_logger "debug" "Debug1? $debug1" "0";
-  brainbox_logger "debug" "Debug2? $debug2" "0";
-  brainbox_logger "debug" "Debug3? $debug3" "0";
-  brainbox_logger "debug" "Debug4? $debug4" "0";
-  brainbox_logger "debug" "Test? $testonly" "0";
-  brainbox_logger "debug" "Assume yes? $assumeyes" "0";
-  brainbox_logger "debug" "Force? $force" "0";
-  brainbox_logger "debug" "Keep logs? $keeplogs" "0";
-  brainbox_logger "debug" "Update only? $updateonly" "0";
-  brainbox_logger "debug" "Upgrade only? $upgradeonly" "0";
-  brainbox_logger "debug" "Apt-Get Options? $aptopts" "0";
-  brainbox_logger "debug" "Forced failure? $forcefail" "0";
-  brainbox_logger "debug" "Notification GUI enabled? $gui" "0";
-fi
+brainbox_logger "debug4" "Arguments: $allargs" "0";
+brainbox_logger "debug4" "Debug1? $debug1" "0";
+brainbox_logger "debug4" "Debug2? $debug2" "0";
+brainbox_logger "debug4" "Debug3? $debug3" "0";
+brainbox_logger "debug4" "Debug4? $debug4" "0";
+brainbox_logger "debug4" "Test? $testonly" "0";
+brainbox_logger "debug4" "Assume yes? $assumeyes" "0";
+brainbox_logger "debug4" "Force? $force" "0";
+brainbox_logger "debug4" "Keep logs? $keeplogs" "0";
+brainbox_logger "debug4" "Update only? $updateonly" "0";
+brainbox_logger "debug4" "Upgrade only? $upgradeonly" "0";
+brainbox_logger "debug4" "Apt-Get Options? $aptopts" "0";
+brainbox_logger "debug4" "Forced failure? $forcefail" "0";
+brainbox_logger "debug4" "Notification GUI enabled? $gui" "0";
 
 
 ##############################################################################
@@ -1769,11 +1770,8 @@ find_apt;
 # OUTPUT: 
 # - If enabled, the apt-get command line in use
 ##############################################################################
-if [[ $debug4 == true ]]
-then
-  # Apt-get should be found by now, show the path
-  brainbox_logger "debug" "Apt-Get command? $aptcmd" "0";
-fi
+# Apt-get should be found by now, show the path
+brainbox_logger "debug4" "Apt-Get command? $aptcmd" "0";
 
 
 ##############################################################################
@@ -1790,27 +1788,23 @@ check_logs_dir;
 # Check for simulation mode
 if [[ $testonly == true ]];
 then
-  echo -e "[${BOLD_GREEN}INFO${NORM}] ${BOLD_RED}Simulation mode enabled.${NORM}\n";
+  echo -e "${BOLD}Simulation mode enabled.${NORM}\n";
 fi
 
 # Update-only/upgrade-only logic
-if [[ $updateonly == true && $upgradeonly == false ]];
-then
+if [[ $updateonly == true && $upgradeonly == false ]]; then
   # Only run update, but also check that upgrade-only is false
   apt_update;
   brainbox_logger "update" "APT install skipped at user request." "0";
-elif [[ $upgradeonly == true && $updateonly == false ]];
-then
+elif [[ $upgradeonly == true && $updateonly == false ]]; then
   # Only run upgrade, but also check that update-only is false
   apt_upgrade;
   brainbox_logger "update" "APT acquire skipped at user request." "0";
-elif [[ $updateonly == false && $upgradeonly == false ]];
-then
+elif [[ $updateonly == false && $upgradeonly == false ]]; then
   # Update-only and upgrade-only are false, run both
   apt_update;
   apt_upgrade;
-elif [[ $upgradeonly == true && $updateonly == true ]];
-then
+elif [[ $upgradeonly == true && $updateonly == true ]]; then
   # Both upgrade-only and update-only were detected. A prior check should have caught this.
   # Set exit code
   updater_exit=10;
