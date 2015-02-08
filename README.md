@@ -29,7 +29,7 @@ I recommend creating a 'bin' directory under your home directory and executing t
 - Purpose: Fail whale in a forest ASCII art
 
 
-## brainbox-updater.sh
+## brainbox-updater-*.sh
 - Status: Mostly complete
 - Purpose: Ubuntu updater
 - Features: 
