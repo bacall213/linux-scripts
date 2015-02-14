@@ -20,12 +20,13 @@
 #
 # TESTED PLATFORMS:                                                
 #   - Ubuntu 12.04 LTS (64-bit)
+#   - Ubuntu 14.04 LTS (64-bit)
 #                                                                   
 # REQUIRED PACAKGES:
 #   - tmux (provides /usr/bin/tmux, man pages, etc)
 #
 # FILES:
-#   - brainmux.sh (required, this script)
+#   - brainmux.sh (this script)
 #
 # OPTIONAL COMPONENTS:
 #   - $HOME/.tmux.conf 
@@ -42,30 +43,11 @@
 #     - e.g. v1.1.2014-b20 = Major version 1, January 2014, build 20
 #
 # REVISION HISTORY:
-#   - v1.7.2014-b1
-#     - Initial public release
-#   - v1.7.2014-b2
-#     - check_symlink function created
-#     - Warning message for bad verbose flags added
-#   - v1.8.2014-b1
-#     - Fixed symlink checker function (flawed logic)
-#   - v1.8.2014-b2
-#     - create() function not as dependant on defaults array order
-#     - Updated a few messages
-#   - v1.8.2014-b3
-#     - Put CLI parsing in alphabetical order
-#     - Added friendly message for sessions() when there are no sessions
-#   - v1.8.2014-b4
-#     - Removed "custom session" flag
-#         - tmux configs are too complex for it to be realistic to 
-#           consider someone would want to enter a custom config at a 
-#           command line
-#     - Added "--attach|-attach" flag for unnamed session creation
-#         - Automatically attaches to newly created session
-#   - v1.8.2014-b5
-#     - Moved unnamed session identification to own function
-#     - Cleaned up process for unnamed session auto-attach
-#     - Implemented --attach|-attach for named sessions
+#   - v1.2.2015-b1
+#     - Started echo => printf conversion
+#     - Started reducing line length to <=80 chars
+#     - Added check for quotes array length < 1
+#
 #   - v1.8.2014-b6
 #     - Eliminated uncaught error output from 'attach' function
 #     - Added more helpful output to 'attach' function
@@ -82,6 +64,37 @@
 #         (https://google-styleguide.googlecode.com/svn/trunk/shell.xml?
 #           showone=Loops#Loops)
 #
+#   - v1.8.2014-b5
+#     - Moved unnamed session identification to own function
+#     - Cleaned up process for unnamed session auto-attach
+#     - Implemented --attach|-attach for named sessions
+#
+#   - v1.8.2014-b4
+#     - Removed "custom session" flag
+#         - tmux configs are too complex for it to be realistic to 
+#           consider someone would want to enter a custom config at a 
+#           command line
+#     - Added "--attach|-attach" flag for unnamed session creation
+#         - Automatically attaches to newly created session
+#
+#   - v1.8.2014-b3
+#     - Put CLI parsing in alphabetical order
+#     - Added friendly message for sessions() when there are no sessions
+#
+#   - v1.8.2014-b2
+#     - create() function not as dependant on defaults array order
+#     - Updated a few messages
+#
+#   - v1.8.2014-b1
+#     - Fixed symlink checker function (flawed logic)
+#
+#   - v1.7.2014-b2
+#     - check_symlink function created
+#     - Warning message for bad verbose flags added
+#
+#   - v1.7.2014-b1
+#     - Initial public release
+
 # TODO:
 #   1) Read and intelligently output .tmux.conf or /etc/tmux.conf in
 #      defaults function.
@@ -121,28 +134,36 @@ declare -r SCRIPT_NAME_BASE_SHORT=$(basename "$SCRIPT_NAME_BASE_LONG");
 # NOTE: create() expects these commands to be in a particular order.
 #       Changing the order will have unexpected consequences.
 declare -r SESSION_DEFAULTS=('tmux new-session -d'
-                            'tmux split-window -h -p 50'
-                            'tmux new-window'
-                            'tmux new-window'
-                            'tmux new-window'
-                            'tmux select-window -t:0'
-                            'tmux select-pane -L -t:0');
+                              'tmux new-window'
+                              'tmux new-window'
+                              'tmux new-window'
+                              'tmux new-window'
+                              'tmux new-window'
+                              'tmux select-window -t:0');
+#                              'tmux select-pane -L -t:0')
 
 # Failure Quotes Array
-declare -r FAILURE_QUOTES=("My great concern is not whether you have failed, but whether you are content with your failure. --Abraham Lincoln"
-                "Many of life's failures are people who did not realize how close they were to success when they gave up. --Thomas A. Edison"
-                "Failure is not fatal, but failure to change might be. --John Wooden"
-                "If you learn from defeat, you haven't really lost. --Zig Ziglar"
-                "Remember that failure is an event, not a person. --Zig Ziglar"
-                "I don't believe in failure. It is not failure if you enjoyed the process. --Oprah Winfrey"
-                "They don't make bugs like Bunny anymore. --Olav Mjelde."
-                "Talk is cheap. Show me the code. --Linus Torvalds"
-                "Life is full of screwups. You're supposed to fail sometimes. It's a required part of the human existance. --Sarah Dessen"
-                "Only those who dare to fail greatly can ever achieve greatly. --Robert F. Kennedy"
-                "Giving up is the only sure way to fail. --Gena Showalter"
-                "The phoenix must burn to emerge. --Janet Fitch"
-                "There is no failure except in no longer trying. --Chris Bradford"
-                "The only real mistake is the one from which we learn nothing. --Henry Ford");
+declare -r FAIL_QUOTES=(
+  "My great concern is not whether you have failed, but whether you are
+        content with your failure. --Abraham Lincoln"
+  "Many of life's failures are people who did not realize how close they were
+        to success when they gave up. --Thomas A. Edison"
+  "Failure is not fatal, but failure to change might be. --John Wooden"
+  "If you learn from defeat, you haven't really lost. --Zig Ziglar"
+  "Remember that failure is an event, not a person. --Zig Ziglar"
+  "I don't believe in failure. It is not failure if you enjoyed the process. 
+        --Oprah Winfrey"
+  "They don't make bugs like Bunny anymore. --Olav Mjelde."
+  "Talk is cheap. Show me the code. --Linus Torvalds"
+  "Life is full of screwups. You're supposed to fail sometimes. It's a 
+        required part of the human existance. --Sarah Dessen"
+  "Only those who dare to fail greatly can ever achieve greatly. 
+        --Robert F. Kennedy"
+  "Giving up is the only sure way to fail. --Gena Showalter"
+  "The phoenix must burn to emerge. --Janet Fitch"
+  "There is no failure except in no longer trying. --Chris Bradford"
+  "The only real mistake is the one from which we learn nothing. 
+        --Henry Ford");
 
 # Initialization for various global variables
 cli_cmd="";                   # Tracks current argument
@@ -176,51 +197,52 @@ function quickhelp()
 {
   # [debug] Function start
   if [[ $debug4 == true ]]; then
-    echo "[DEBUG][QUICKHELP][${BOLD_GREEN}INFO${NORM}] Entering 'quickhelp'" \
-          "function";
+    printf "%s %s\n"\
+            "[DEBUG][QUICKHELP][${BOLD_GREEN}INFO${NORM}]"\
+            "Entering 'quickhelp' function";
   fi
 
-  echo -en "\n${BOLD}USAGE :: $0${NORM} [-v|vv|vvv|vvvv] ${BOLD}command${NORM} ${UL}options${NO_UL}\r\n
-  ${UL}Create and Destroy Sessions${NO_UL}\r
-    ${BOLD}create${NORM} [${UL}session_1${NO_UL} ${UL}session_2${NO_UL} ${UL}session_3${NO_UL} ...]\r
-    \t(aliases: ${BOLD}new${NORM}, ${BOLD}start${NORM})\r
-
-    ${BOLD}destroy${NORM} [all] ${UL}existing_session${NO_UL}\r
-    \t(aliases: ${BOLD}stop${NORM}, ${BOLD}kill${NORM})\r
-
-  ${UL}Connect and Disconnect Sessions${NO_UL}\r
-    ${BOLD}connect${NORM} ${UL}existing_session${NO_UL}\r
-    \t(alias: ${BOLD}attach${NORM})\r
-
-    ${BOLD}disconnect${NORM} ${UL}existing_session${NO_UL}\r
-    \t(alias: ${BOLD}detach${NORM})\r
-
-  ${UL}Session Information${NO_UL}\r
-    ${BOLD}info${NORM}\r
-    ${BOLD}defaults${NORM} (alias: ${BOLD}config${NORM})\r
-    ${BOLD}sessions${NORM} (alias: ${BOLD}list${NORM})\r
-
-  ${UL}General Script Options${NO_UL}\r
-    ${BOLD}help${NORM} (this menu)\r
-    ${BOLD}helpfull${NORM}\r
-
-    Debug/Verbose Mode (${BOLD}Must be first argument${NORM})\r
-      -v    : Minimal verbosity/debug information\r
-      -vv   : More verbose/some internal debug information\r
-      -vvv  : Most debug information\r
-      -vvvv : Full verbosity/All debug information\n\n";
+  printf "\n%s %s\n\
+          \n%s\n%s %s\n%s\n\n%s\n%s\n\
+          \n%s\n%s\n%s\n\n%s\n%s\n\
+          \n%s\n%s\n%s\n%s\n\
+          \n%s\n%s\n%s\n\n%s\n%s\n%s\n%s\n%s\n"\
+          "${BOLD}USAGE :: $0${NORM} [-v|vv|vvv|vvvv] ${BOLD}command${NORM}"\
+          "${UL}options${NO_UL}"\
+          "  ${UL}Create and Destroy Sessions${NO_UL}"\
+          "    ${BOLD}create${NORM} [${UL}session_1${NO_UL}"\
+          "${UL}session_2${NO_UL} ${UL}session_3${NO_UL} ...]"\
+          "        (alias: ${BOLD}new${NORM}, ${BOLD}start${NORM})"\
+          "    ${BOLD}destroy${NORM} [all] ${UL}existing_session${NO_UL}"\
+          "        (aliases: ${BOLD}stop${NORM}, ${BOLD}kill${NORM})"\
+          "  ${UL}Connect and Disconnect Sessions${NO_UL}"\
+          "    ${BOLD}connect${NORM} ${UL}existing_session${NO_UL}"\
+          "        (alias: ${BOLD}attach${NORM})"\
+          "    ${BOLD}disconnect${NORM} ${UL}existing_session${NO_UL}"\
+          "        (alias: ${BOLD}detach${NORM})"\
+          "  ${UL}Session Information${NO_UL}"\
+          "    ${BOLD}info${NORM}"\
+          "    ${BOLD}defaults${NORM} (alias: ${BOLD}config${NORM})"\
+          "    ${BOLD}sessions${NORM} (alias: ${BOLD}list${NORM})"\
+          "${UL}Generic Script Options${NO_UL}"\
+          "    ${BOLD}help${NORM} (this menu)"\
+          "    ${BOLD}helpfull${NORM}"\
+          "    Debug/Verbose Mode (${BOLD}Must be first argument${NORM})"\
+          "      -v    : Minimal verbosity/debug information"\
+          "      -vv   : More verbose/some internal debug information"\
+          "      -vvv  : Most debug information"\
+          "      -vvvv : Full verbosity/All debug information";
 
   # [debug] Function end
   if [[ $debug4 == true ]]; then
-    echo "[DEBUG][QUICKHELP][${BOLD_GREEN}INFO${NORM}] Leaving 'quickhelp'" \
-          "function";
+    printf "%s %s\n"\
+            "[DEBUG][QUICKHELP][${BOLD_GREEN}INFO${NORM}]"\
+            "Leaving 'quickhelp' function";
   fi
 
   # Exit gracefully
   exit 0;
 }
-
-
 
 
 ##############################################################################
@@ -310,8 +332,6 @@ function fullhelp()
 }
 
 
-
-
 ##############################################################################
 ##############################################################################
 # FUNCTION
@@ -375,8 +395,6 @@ function check_symlink()
 }
 
 
-
-
 ##############################################################################
 ##############################################################################
 # FUNCTION
@@ -397,32 +415,40 @@ function defaults()
   fi
 
   # Window layout
-  echo -e " \
-  ################### ###################\n \
-  #      Window 0   # #     Window 1    #\n \
-  ################### ###################\n \
-  # Pane 1 # Pane 2 # #                 #\n \
-  # (bash) # (bash) # #     (bash)      #\n \
-  #        #        # #                 #\n \
-  #  50%   #  50%   # #      100%       #\n \
-  ################### ###################\n \
-  \n \
-  ################### ###################\n \
-  #     Window 2    # #     Window 3    #\n \
-  ################### ###################\n \
-  #                 # #                 #\n \
-  #      (bash)     # #      (bash)     #\n \
-  #                 # #                 #\n \
-  #       100%      # #       100%      #\n \
-  ################### ###################\n";
+  printf "%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n\
+          \n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n\n"\
+          " ################ ################"\
+          " #   Window 0   # #   Window 1   #"\
+          " ################ ################"\
+          " #              # #              #"\
+          " #    (bash)    # #    (bash)    #"\
+          " #              # #              #"\
+          " #     100%     # #     100%     #"\
+          " ################ ################"\
+          " ################ ################"\
+          " #   Window  2  # #   Window 3   #"\
+          " ################ ################"\
+          " #              # #              #"\
+          " #    (bash)    # #    (bash)    #"\
+          " #              # #              #"\
+          " #     100%     # #     100%     #"\
+          " ################ ################"\
+          " ################"\
+          " #   Window 4   #"\
+          " ################"\
+          " #              #"\
+          " #    (bash)    #"\
+          " #              #"\
+          " #     100%     #"\
+          " ################";
 
   # Options
-  echo -e "${BOLD}Session creation commands:${NORM}\n";
+  printf "%s\n\n" "${BOLD}Session creation commands:${NORM}";
   
   # Output default session creation parameters
   # Use 'sdefault' to prevent potential collisions with 'default'
   for sdefault in "${SESSION_DEFAULTS[@]}"; do
-    echo "   $sdefault";
+    printf "   %s\n" "$sdefault";
   done
 
   # Print tmux.conf
@@ -452,8 +478,6 @@ function defaults()
   # Exit gracefully
   exit 0;
 }
-
-
 
 
 ##############################################################################
@@ -499,8 +523,6 @@ function check_session()
           "'check_session' function";
   fi
 }
-
-
 
 
 ##############################################################################
@@ -564,8 +586,6 @@ function find_newest_session()
 
   # No exit
 }
-
-
 
 
 ##############################################################################
@@ -672,7 +692,6 @@ function create()
       #{tmux new-window} -t ${session_args[$arg_pos]};
       #{tmux new-window} -t ${session_args[$arg_pos]};
       #{tmux select-window -t:0} -t ${session_args[$arg_pos]}:0;
-      #{tmux select-pane -L -t:0} -t ${session_args[$arg_pos]}:0;
 
       # Actual defaults array
       # tmux new-session -d
@@ -681,7 +700,6 @@ function create()
       # tmux new-window
       # tmux new-window
       # tmux select-window -t:0
-      # tmux select-pane -L -t:0
 
       # Parse SESSION_DEFAULTS array and execute commands
       # Order matters, but shouldn't be dependent on the array
@@ -790,7 +808,6 @@ function create()
         #{tmux new-window} -t $i;
         #{tmux new-window} -t $i;
         #{tmux select-window -t:0} -t $i:0;
-        #{tmux select-pane -L -t:0} -t $i:0;
 
         # Actual defaults array
         # tmux new-session -d
@@ -799,7 +816,6 @@ function create()
         # tmux new-window
         # tmux new-window
         # tmux select-window -t:0
-        # tmux select-pane -L -t:0
 
         # Parse SESSION_DEFAULTS array and execute commands
         # Order matters, but shouldn't be dependent on the array
@@ -809,7 +825,9 @@ function create()
           case $param in
             "tmux new-session -d")
               if [[ $debug4 == true ]]; then
-                echo "[DEBUG][CREATE] Create session executing: $param -s $i";
+                printf "%s %s\n"\
+                        "[DEBUG][CREATE] Create session executing:"\
+                        "$param -s $i";
                 $param -s $i;
               else
                 $param -s $i;
@@ -817,7 +835,9 @@ function create()
             ;;
             "tmux split-window -h -p 50")
               if [[ $debug4 == true ]]; then
-                echo "[DEBUG][CREATE] Create session executing: $param -t $i";
+                printf "%s %s\n"\
+                        "[DEBUG][CREATE] Create session executing:"\
+                        "$param -t $i";
                 $param -t $i;
               else
                 $param -t $i;
@@ -825,7 +845,9 @@ function create()
             ;;
             "tmux new-window")
               if [[ $debug4 == true ]]; then
-                echo "[DEBUG][CREATE] Create session executing: $param -t $i";
+                printf "%s %s\n"\
+                        "[DEBUG][CREATE] Create session executing:"\
+                        "$param -t $i";
                 $param -t $i;
               else 
                 $param -t $i;
@@ -833,7 +855,9 @@ function create()
             ;;
             "tmux select-window -t:0")
               if [[ $debug4 == true ]]; then
-                echo "[DEBUG][CREATE] Create session executing: $param -t $i:0";
+                printf "%s %s\n"\
+                        "[DEBUG][CREATE] Create session executing:"\
+                        "$param -t $i:0";
                 $param -t $i:0;
               else 
                 $param -t $i:0;
@@ -841,7 +865,9 @@ function create()
             ;;
             "tmux select-pane -L -t:0")
               if [[ $debug4 == true ]]; then
-                echo "[DEBUG][CREATE] Create session executing: $param -t $i:0";
+                printf "%s %s\n"\
+                        "[DEBUG][CREATE] Create session executing:"\
+                        "$param -t $i:0";
                 $param -t $i:0;
               else
                 $param -t $i:0;
@@ -849,12 +875,14 @@ function create()
             ;;
             *)
               if [[ $debug4 == true ]]; then
-                echo "[DEBUG][CREATE][${BOLD_RED}ERROR${NORM}] A tmux" \
-                      "session creation command does not match an expected" \
-                      "value: $param";
+                printf "%s %s %s\n"\
+                        "[DEBUG][CREATE][${BOLD_RED}ERROR${NORM}] A tmux"\
+                        "session creation command does not match an expected"\
+                        "value: $param";
               else
-                echo "${BOLD_YELLOW}WARNING${NORM} Potentially fatal" \
-                      "session creation error. Run with -vvvv for details";
+                printf "%s %s\n"\
+                        "${BOLD_YELLOW}WARNING${NORM} Potentially fatal"\
+                        "session creation error. Run with -vvvv for details.";
               fi
           esac
         done
@@ -881,8 +909,6 @@ function create()
   # Exit gracefully
   exit 0;
 }
-
-
 
 
 ##############################################################################
@@ -1003,8 +1029,6 @@ function destroy()
 }
 
 
-
-
 ##############################################################################
 ##############################################################################
 # FUNCTION
@@ -1102,8 +1126,6 @@ function attach()
 }
 
 
-
-
 ##############################################################################
 ##############################################################################
 # FUNCTION
@@ -1185,8 +1207,6 @@ function detach()
 }
 
 
-
-
 ##############################################################################
 ##############################################################################
 # FUNCTION
@@ -1226,8 +1246,6 @@ function info()
   # Exit gracefully
   exit 0;
 }
-
-
 
 
 ##############################################################################
@@ -1306,8 +1324,6 @@ function sessions()
 }
 
 
-
-
 ##############################################################################
 ##############################################################################
 # MAIN
@@ -1331,21 +1347,24 @@ if [[ $# -gt 0 ]]; then
         debug1=true;
         debug2=true;
         debug3=true;
-        echo -e "\n[DEBUG][MAIN][${BOLD_YELLOW}WARN${NORM}] Debug level 3" \
-                "enabled\n";
+        printf "\n%s %s\n\n"\
+                "[DEBUG][MAIN][${BOLD_YELLOW}WARN${NORM}] Debug level 3"\
+                "enabled";
       ;;
       -vvvv)
         debug1=true;
         debug2=true;
         debug3=true;
         debug4=true;
-        echo -e "\n[DEBUG][MAIN][${BOLD_YELLOW}WARN${NORM}] Debug level 4" \
-                "enabled\n";
+        printf "\n%s %s\n\n"\
+                "[DEBUG][MAIN][${BOLD_YELLOW}WARN${NORM}] Debug level 4"\
+                "enabled";
       ;;
       *)
         # Bad verbose flag
-        echo "${BOLD_YELLOW}WARN${NORM} Bad verbose flag," \
-              "'${BOLD}$cli_cmd${NORM}.' Continuing without verbosity."
+        printf "%s %s\n"\
+                "${BOLD_YELLOW}WARN${NORM} Bad verbose flag,"\
+                "'${BOLD}$cli_cmd${NORM}.' Continuing without verbosity.";
       ;;
     esac
     
@@ -1357,12 +1376,6 @@ if [[ $# -gt 0 ]]; then
   check_symlink;
 
   case $cli_cmd in
-    autocompletelist)
-      # Output list of script options for the autocomplete function
-      echo "attach config connect create defaults destroy detach" \
-            "disconnect help helpfull info kill new sessions" \
-            "start stop ?";
-    ;;
     attach|Attach|ATTACH|connect|Connect|CONNECT)
       # Attach tmux session
       attach;
@@ -1420,6 +1433,12 @@ if [[ $# -gt 0 ]]; then
       # Just-in-case... (but this shouldn't be reached)
       exit 1;
     ;;
+    restore|Restore|RESTORE|load|Load|LOAD)
+      printf "%s\n" "[TODO] Restore function not yet implemented."; 
+    ;;
+    save|Save|SAVE)
+      printf "%s\n" "[TODO] Save function not yet implemented";
+    ;;
     sessions|Sessions|SESSIONS|list|List|LIST)
       # Show current tmux sessions
       sessions "true";
@@ -1428,8 +1447,9 @@ if [[ $# -gt 0 ]]; then
       exit 1;
     ;;
     *)
-    # [console] Bad flag, show error and call quick help function
-    echo "${BOLD_RED}ERROR${NORM} Bad flag, '${BOLD}$cli_cmd${NORM}'";
+    # Bad flag
+    printf "%s\n"\
+            "${BOLD_RED}ERROR${NORM} Bad flag, '${BOLD}$cli_cmd${NORM}'";
     
     quickhelp;
 
@@ -1444,11 +1464,19 @@ else
   # Random number generation localized so it's not called unless needed
   # Generate random number within range 0 - ARRAY_LEN
   RAND=$RANDOM;
-  let RAND%=${#FAILURE_QUOTES[@]};
 
-  # Print a funny quote from FAILURE_QUOTES array for instances when no 
-  #   command is entered
-  echo -e "\n${BOLD_RED}FAILURE${NORM} ${FAILURE_QUOTES[$RAND]}";
+  if [[ ${#FAIL_QUOTES[@]} -ge 1 ]]; then
+    let RAND%=${#FAIL_QUOTES[@]};
+    
+    # Print a funny quote when no command is entered
+    printf "\n%s\n"\
+            "${BOLD_RED}FAILURE${NORM} ${FAIL_QUOTES[$RAND]}";
+  else
+    printf "\n%s %s\n%s\n"\
+            "${BOLD_RED}FAILURE${NORM} This script requires at least one"\
+            "argument."\
+            "        [INTERNAL BUG: Quotes array does not have >=1 element]";
+  fi
 
   # Show the documentation
   quickhelp;
